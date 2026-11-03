@@ -1,0 +1,17 @@
+# 调研报告是原始资料，保持原样不改写
+.agents/
+
+# 迁移文件由 drizzle-kit 生成，不手工格式化
+packages/db/migrations/
+
+# 构建产物
+dist/
+coverage/
+node_modules/
+
+# 锁文件
+pnpm-lock.yaml
+
+# 架构文档含中文表格，Prettier 重排会插入空格破坏可读性。
+# 文档由人工维护格式，不交给 Prettier。
+docs/architecture/

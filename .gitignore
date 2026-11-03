@@ -39,3 +39,8 @@ coverage/
 offline/
 .pnpm-store/
 *.tgz
+
+# ---- 构建与工具产物 ----
+*.tsbuildinfo
+.eslintcache
+vite.config.ts.timestamp-*

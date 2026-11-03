@@ -144,7 +144,9 @@
   反向代理（生产）：nginx，同一域名下 / → 静态资源、/api → api、/collab → collab
 ```
 
-**数据库形态说明（v1.1 变更）**：默认使用 **SQLite 单文件**（`data/weshare.db`），由 `better-sqlite3` 驱动、Drizzle ORM 访问。选它的三个理由：(a) 私有化交付场景里"少一个要运维的服务"价值高于"换库的灵活性"；(b) 单机部署下 SQLite 的写并发（单写者 + WAL）足以支撑 MVP 规模；(c) 备份 = 复制文件，成本近零。代价是写并发受限，因此**所有落库走短事务**，且 `collab` 与 `api` 的写入不能互相长事务阻塞（见 §9.5）。
+**数据库形态说明（v1.1 变更）**：默认使用 **SQLite 单文件**（`data/weshare.db`），由 `@libsql/client` 驱动、Drizzle ORM 访问。选它的三个理由：(a) 私有化交付场景里"少一个要运维的服务"价值高于"换库的灵活性"；(b) 单机部署下 SQLite 的写并发（单写者 + WAL）足以支撑 MVP 规模；(c) 备份 = 复制文件，成本近零。代价是写并发受限，因此**所有落库走短事务**，且 `collab` 与 `api` 的写入不能互相长事务阻塞（见 §9.5）。
+
+**为什么用 `@libsql/client` 而不是 `better-sqlite3`**：`better-sqlite3` 是原生模块，安装时需 node-gyp 编译——Windows 上还要 MSBuild + ClangCL 工具集（本机实测编译失败）。这会让 CI 环境与"纯内网离线交付"都变脆。`@libsql/client` 提供预编译二进制，装完即用；SQLite 文件格式完全兼容，Drizzle 官方支持 `drizzle-orm/libsql` 驱动，许可证 MIT。
 
 **扩展路径**：ORM 层是唯一的数据库出口，`packages/db` 内按方言分文件（`schema.sqlite.ts` / `schema.pg.ts`）与驱动分文件（`driver.sqlite.ts` / `driver.pg.ts`），业务层只依赖 `db.query.*` 抽象接口。切换 PostgreSQL 时只替换 `packages/db` 与连接配置，业务代码与 API 契约不变。切换的触发条件写在 §15-D2。
 
@@ -240,7 +242,7 @@ MVP **不要求容器化**：交付形态是"一个目录 + 一个启动脚本"�
 | `unocss` | 66.12.0 | MIT | 原子化 CSS |
 | `fastify` | 5.12.8 | MIT | HTTP 服务 |
 | `drizzle-orm` / `drizzle-kit` | 0.45.4 / 0.31.11 | Apache-2.0 | ORM + 迁移生成 |
-| `better-sqlite3` | 13.0.3 | MIT | SQLite 驱动（同步 API，MVP 首选） |
+| `@libsql/client` | 0.18.0 | MIT | SQLite 驱动（预编译二进制，无 node-gyp 编译） |
 | `@univerjs/core` / `@univerjs/presets` | 1.3.1 | Apache-2.0 | 表格（Phase 5） |
 
 全链路 MIT/Apache-2.0，无 GPL/AGPL；CI 加许可证门禁，把 GPL/AGPL 依赖设为硬失败。版本用 `pnpm-lock.yaml` 锁定，升级走单独 PR。
@@ -594,7 +596,9 @@ audit_events
 | `edit` | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `manage` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-空间角色（`workspace_members.role`）是**上限**，不能被他处授权突破：`viewer` 永远是只读，`owner/admin` 对空间内所有节点拥有 `manage`。
+空间角色（`workspace_members.role`）是**上限**，不能被他处授权突破：`viewer` 永远是只读；`owner/admin` **不封顶**（可以被授予 `manage`，且自身的 `manage` 不会被截断）；`member` 同样不封顶。
+
+注意措辞：空间 `owner/admin` 是"不封顶"，**不是**"自动对所有节点拥有 manage"。一个 `owner` 对别人创建的私密文档，默认仍然是 `null`（无权），除非有 ACL 授权或该文档属于自己。理由是空间角色是**上限**而非**授予**——把它当授予会让"私密文档"失去意义（架构文档 §8.2 的伪代码是权威表述，§8.1 的措辞以它为准）。
 
 `node_acl.effect` 提供**降权**能力：`allow` 表示授予（取最大值），`deny` 表示显式禁止（取最小值）。这样在空间默认角色为 `edit` 的前提下，仍可把特定某人单独降为只读。
 
@@ -967,12 +971,12 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 > 顺序即依赖顺序；每个任务给出"完成判据"，避免"写完就算完成"。
 
 **T0 环境与工程骨架**
-- T0.1 固化工具链：根 `package.json` 写 `"packageManager": "pnpm@9.14.4"`，`engines.node` 声明 `>=22`；写 `docs/dev-setup.md`（Node + pnpm + 一条命令起 SQLite，无 Docker、无数据库服务）。判据：全新机器按文档走完，`pnpm -r typecheck` 全绿。
+- T0.1 固化工具链：根 `package.json` 写 `"packageManager": "pnpm@9.14.4"`，`engines.node` 声明 `>=22`；写 `docs/dev-setup.md`（Node + pnpm + 一条命令起 SQLite，无 Docker、无数据库服务）。判据：全新机器按文档走完，`pnpm -r typecheck` 全绿。**已完成**（2026-11-03）。
 - T0.2 ~~`git init` + `.gitignore` + 首个 commit~~ **已完成**（2026-11-03：仓库已建于 GitHub，开源规范文件已配齐，`.gitignore` / `.gitattributes` 已就位）。
-- T0.3 pnpm workspace 骨架：`apps/web`、`apps/api`、`apps/collab`、`packages/{shared,doc-schema,authz,db}`；根 `tsconfig.base.json`；统一 `lint`/`typecheck`/`test` 脚本。判据：`pnpm -r typecheck` 全绿。
-- T0.4 `apps/api` 骨架：Fastify 装配、zod 配置、pino 日志、统一错误响应体、`/healthz`。判据：`curl /healthz` 返回 `{ok:true}`。
-- T0.5 `apps/web` 骨架：Vite + Vue 3 + Router + Pinia + UnoCSS + Reka UI；`/healthz` 联调。判据：页面能显示后端健康状态。
-- T0.6 启用 CI 的 `code-checks` job：提交根 `package.json` 后把 `.github/workflows/ci.yml` 中该 job 的 `if: false` 去掉。判据：CI 在 PR 上跑出 typecheck / lint / test 结果。
+- T0.3 pnpm workspace 骨架：`apps/web`、`apps/api`、`apps/collab`、`packages/{shared,doc-schema,authz,db}`；根 `tsconfig.base.json`；统一 `lint`/`typecheck`/`test` 脚本。判据：`pnpm -r typecheck` 全绿。**已完成**（2026-11-03）。
+- T0.4 `apps/api` 骨架：Fastify 装配、zod 配置、pino 日志、统一错误响应体、`/healthz`。判据：`curl /healthz` 返回 `{ok:true}`。**已完成**（2026-11-03）。
+- T0.5 `apps/web` 骨架：Vite + Vue 3 + Router + Pinia + UnoCSS + Reka UI；`/healthz` 联调。判据：页面能显示后端健康状态。**已完成**（2026-11-03）。
+- T0.6 启用 CI 的 `code-checks` job：提交根 `package.json` 后把 `.github/workflows/ci.yml` 中该 job 的 `if: false` 去掉。判据：CI 在 PR 上跑出 typecheck / lint / test 结果。**已完成**（2026-11-03）。
 
 **T1 数据库**
 - T1.1 `packages/db/src/schema/schema.sqlite.ts` 定义 §7.2 全部表（含 `node_acl.effect`、`content_schema_version` / `yjs_schema_version` 拆分、`parent_id` 级联删除）。
@@ -1019,10 +1023,11 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 |---|---|---|---|---|
 | D1 | 前端 UI 基础件 | **已定** | **Reka UI 2.x（headless）+ UnoCSS + TypeScript**，Vue 3。基础件无样式，视觉全部由 UnoCSS 承担 | 平台壳的 Dialog/Popover/Dropdown/Tabs 等用 Reka UI 组合；**目录树与表格需自研**（已计入 T4.4 工期，见 R18）。好处是不与设计系统打架，且组件不绑定数据层 |
 | D2 | 数据库 | **已定** | **SQLite 单文件优先 + Drizzle ORM**，通过 `packages/db` 做方言隔离，业务代码无方言 SQL | 不需要 Docker、不需要数据库服务，Phase 1 可当天开工；交付物少一个运维组件。切换 PostgreSQL 的触发条件：单文件 > 10 GB **或** 落库延迟 > 1 s **或** 需要多实例部署 |
+| D2a | SQLite 驱动 | **已定**（2026-11-03 实施时确定） | **`@libsql/client`**，不用 `better-sqlite3` | `better-sqlite3` 是原生模块，需 node-gyp 编译（Windows 上还要 MSBuild + ClangCL 工具集），会让 CI 环境与离线交付都变脆。`@libsql/client` 提供预编译二进制，装完即用；SQLite 文件格式完全兼容，Drizzle 官方支持 `drizzle-orm/libsql` 驱动；许可证 MIT，与依赖树基调一致 |
 | D3 | 评论是否进 MVP | 默认进 | Phase 4 基础态（划词 + 线程 + 解决） | 影响 Phase 4 工期约 1 周 |
 | D4 | 账号来源 | 默认自建 | 平台自建账号（MVP）；预留 OIDC 接口位 | 若企业已有统一认证，MVP 后接入时需改登录页与用户表 |
 | D5 | 生产反向代理 | 默认 nginx | nginx（本文默认）；MVP 不要求容器化 | 影响部署脚本；compose 降级为可选产物 |
-| D6 | 开源与许可证 | **已定** | **Apache-2.0**，仓库公开托管于 GitHub | 见 §15.1。选 Apache-2.0 而非 MIT：含专利授权，且与依赖中 Apache-2.0 的一侧一致，便于做单一许可证声明 |
+| D6 | 开源与许可证 | **已定** | **Apache-2.0**，仓库托管于 GitHub（**可见性私有**，工程标准按开源执行，见 §15.1） | 见 §15.1。选 Apache-2.0 而非 MIT：含专利授权，且与依赖中 Apache-2.0 的一侧一致，便于做单一许可证声明 |
 
 **D2 的方言扩展承诺（必须兑现）**：`packages/db` 提供 `schema.sqlite.ts` 与预留的 `schema.pg.ts` 两套定义，`repo/` 层方法签名完全一致。切换 PostgreSQL 的工作量上限是"新增一个 schema 文件 + 一个 driver 文件 + 重跑迁移"，**不允许波及业务代码**。这条承诺由 Phase 1 验收第 9 条（方言标识扫描）强制。
 

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
@@ -72,7 +72,6 @@ jobs:
   # ===================================================================
   code-checks:
     name: 代码检查
-    if: false # ← Phase 1 提交根 package.json 后改为 `if: success()`
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

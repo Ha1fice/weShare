@@ -124,9 +124,7 @@ if (invariants) {
 
 // 编号连续性：I1, I2, ... 不能跳号或重号
 if (invariants) {
-  const ids = [...invariants.body.matchAll(/^- \*\*(I\d+)\s/gm)].map((m) =>
-    Number(m[1].slice(1)),
-  )
+  const ids = [...invariants.body.matchAll(/^- \*\*(I\d+)\s/gm)].map((m) => Number(m[1].slice(1)))
   for (let i = 0; i < ids.length; i++) {
     if (ids[i] !== i + 1) {
       problems.push({

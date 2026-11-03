@@ -1,0 +1,38 @@
+{
+  "name": "weshare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "企业私有化协同在线文档平台：平台原生富文本 + 真实多人协同",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.14.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r test",
+    "verify": "node scripts/verify.mjs",
+    "verify:full": "node scripts/verify.mjs --full",
+    "db:migrate": "pnpm --filter @weshare/db db:migrate",
+    "db:seed": "pnpm --filter @weshare/db db:seed",
+    "db:verify": "pnpm --filter @weshare/db db:verify",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.12.0",
+    "globals": "^17.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^3.2.4"
+  }
+}

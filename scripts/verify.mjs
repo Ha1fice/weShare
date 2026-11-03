@@ -47,10 +47,7 @@ const KNOWN_GROUPS = ['repo', 'docs', 'code', 'e2e']
  * 判定依据是"跑一次要多久"，不是"跑不跑"。
  */
 function isHeavyStep(step) {
-  return (
-    step.heavy === true ||
-    /migrate|audit|licenses|e2e|playwright|build\b/i.test(step.name)
-  )
+  return step.heavy === true || /migrate|audit|licenses|e2e|playwright|build\b/i.test(step.name)
 }
 
 /**
@@ -240,7 +237,11 @@ if (selected.length === 0) {
   process.exit(2)
 }
 
-console.log(`\n开始验证：${selected.length} 个步骤` + (selectedGroups ? `（组：${selectedGroups}）` : '') + '\n')
+console.log(
+  `\n开始验证：${selected.length} 个步骤` +
+    (selectedGroups ? `（组：${selectedGroups}）` : '') +
+    '\n',
+)
 
 for (const s of selected) {
   const label = `[${s.group}] ${s.name}`
@@ -279,9 +280,7 @@ for (const s of selected) {
   results.push({ group: s.group, name: s.name, ok, code, ms, output: out })
 }
 
-const skippedGroups = KNOWN_GROUPS.filter(
-  (g) => !selected.some((s) => s.group === g),
-)
+const skippedGroups = KNOWN_GROUPS.filter((g) => !selected.some((s) => s.group === g))
 
 console.log('\n' + '─'.repeat(60))
 if (failed === 0 && zeroCoverage === 0) {
@@ -290,13 +289,14 @@ if (failed === 0 && zeroCoverage === 0) {
   console.log(`⚠️  ${results.length} 个步骤中 ${zeroCoverage} 个为零覆盖，0 个失败`)
   console.log('   零覆盖意味着这些门禁没有检查任何内容——不算通过。')
 } else {
-  console.log(`❌ ${failed} / ${results.length} 个步骤失败` + (zeroCoverage ? `，另有 ${zeroCoverage} 个零覆盖` : ''))
+  console.log(
+    `❌ ${failed} / ${results.length} 个步骤失败` +
+      (zeroCoverage ? `，另有 ${zeroCoverage} 个零覆盖` : ''),
+  )
 }
 
 // 不静默省略：点名没跑的组与重门禁项
-const skippedHeavy = steps.filter(
-  (s) => isHeavyStep(s) && !results.some((r) => r.name === s.name),
-)
+const skippedHeavy = steps.filter((s) => isHeavyStep(s) && !results.some((r) => r.name === s.name))
 if (skippedGroups.length > 0) {
   console.log(`本轮未跑的组：${skippedGroups.join('、')}`)
 }

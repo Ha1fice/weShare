@@ -42,14 +42,7 @@ for (const f of REQUIRED_FILES) {
 }
 
 // .gitignore 必须忽略的项
-const REQUIRED_IGNORE = [
-  'node_modules/',
-  '.env',
-  'data/',
-  'uploads/',
-  'dist/',
-  '.screenshots/',
-]
+const REQUIRED_IGNORE = ['node_modules/', '.env', 'data/', 'uploads/', 'dist/', '.screenshots/']
 
 if (existsSync(path.join(ROOT, '.gitignore'))) {
   const gi = readFileSync(path.join(ROOT, '.gitignore'), 'utf8')
@@ -64,7 +57,9 @@ if (existsSync(path.join(ROOT, '.gitignore'))) {
 if (existsSync(path.join(ROOT, '.gitattributes'))) {
   const ga = readFileSync(path.join(ROOT, '.gitattributes'), 'utf8')
   if (!/\*\s+text=auto\s+eol=lf/.test(ga)) {
-    problems.push('.gitattributes 缺少 `* text=auto eol=lf`（Windows 开发 / Linux 部署必须统一行尾）')
+    problems.push(
+      '.gitattributes 缺少 `* text=auto eol=lf`（Windows 开发 / Linux 部署必须统一行尾）',
+    )
   }
 }
 
@@ -82,13 +77,17 @@ if (existsSync(MIGRATION_DIR)) {
   }
   for (const f of walk(MIGRATION_DIR)) {
     if (/schema\.sql$|\.ddl$/i.test(f)) {
-      problems.push(`存在疑似手写 DDL：${path.relative(ROOT, f)}（表结构只能来自 drizzle-kit 生成的迁移）`)
+      problems.push(
+        `存在疑似手写 DDL：${path.relative(ROOT, f)}（表结构只能来自 drizzle-kit 生成的迁移）`,
+      )
     }
   }
 }
 
 if (problems.length === 0) {
-  console.log(`✓ 仓库布局检查通过（${REQUIRED_FILES.length} 个必备文件，${REQUIRED_IGNORE.length} 条忽略规则）`)
+  console.log(
+    `✓ 仓库布局检查通过（${REQUIRED_FILES.length} 个必备文件，${REQUIRED_IGNORE.length} 条忽略规则）`,
+  )
   process.exit(0)
 }
 

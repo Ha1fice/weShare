@@ -19,7 +19,16 @@
  * 退出码：0 全部通过 / 1 有护栏无法被证明失败 / 2 无护栏可检
  */
 
-import { mkdtempSync, cpSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  readdirSync,
+  copyFileSync,
+} from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -51,7 +60,18 @@ const CASES = [
       const broken = text
         .replace(/### 4\.2 (\d+)条架构不变式/, (_, n) => `### 4.2 ${Number(n) + 1}条架构不变式`)
         .replace(/### 4\.2 ([零一二两三四五六七八九十百]+)条架构不变式/, (m, cn) => {
-          const table = { 零: '零', 一: '二', 二: '三', 三: '四', 四: '五', 五: '六', 六: '七', 七: '八', 八: '九', 九: '十' }
+          const table = {
+            零: '零',
+            一: '二',
+            二: '三',
+            三: '四',
+            四: '五',
+            五: '六',
+            六: '七',
+            七: '八',
+            八: '九',
+            九: '十',
+          }
           return `### 4.2 ${table[cn] ?? cn}条架构不变式`
         })
       if (broken === text) {
@@ -71,36 +91,43 @@ const CASES = [
   },
   {
     guard: 'scripts/guards/check-test-manifest.mjs',
-    label: '新增测试文件但不登记进 test 脚本，清单护栏必须失败',
+    label: '测试文件落在 vitest include 范围外，清单护栏必须失败',
     breakIt(dir) {
-      const pkgDir = path.join(dir, 'apps', 'api')
-      mkdirSync(pkgDir, { recursive: true })
-      writeFileSync(
-        path.join(pkgDir, 'package.json'),
-        JSON.stringify({ name: 'api', scripts: { test: 'node --test src/a.test.ts' } }, null, 2),
-        'utf8',
-      )
-      const srcDir = path.join(pkgDir, 'src')
-      mkdirSync(srcDir, { recursive: true })
-      writeFileSync(path.join(srcDir, 'a.test.ts'), '// test\n', 'utf8')
-      writeFileSync(path.join(srcDir, 'b.test.ts'), '// test\n', 'utf8')
+      // vitest 配置只收集 src 下的 test 文件，
+      // 造一个位于根目录的测试文件——它在 include 范围外，不会被执行
+      writeFileSync(path.join(dir, 'outside.test.ts'), '// test\n', 'utf8')
     },
   },
 ]
 
+/** 复制时不进入的目录名（任意层级）。 */
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.pnpm-store'])
+
 /**
  * 复制仓库内容到临时目录。
  *
- * 注意：cpSync(ROOT, dir) 在 dir 已存在时会把 ROOT 复制成 dir/<basename>，
- * 那样护栏按自身位置解析出的 ROOT 就会错位。必须逐项复制内容。
+ * 注意两点：
+ * 1. cpSync(ROOT, dir) 在 dir 已存在时会把 ROOT 复制成 dir/<basename>，
+ *    那样护栏按自身位置解析出的 ROOT 就会错位。必须逐项复制内容。
+ * 2. pnpm 会在每个子包下建 node_modules，必须在任意层级跳过——
+ *    否则复制几百 MB 依赖会让自检慢到超时。
  */
 function copyRepoContents(dest) {
-  for (const entry of readdirSync(ROOT, { withFileTypes: true })) {
-    if (entry.name === '.git' || entry.name === 'node_modules') continue
-    const src = path.join(ROOT, entry.name)
-    const dst = path.join(dest, entry.name)
-    cpSync(src, dst, { recursive: true })
+  function copyInto(srcDir, destDir) {
+    for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+      if (SKIP_DIRS.has(entry.name)) continue
+      const src = path.join(srcDir, entry.name)
+      const dst = path.join(destDir, entry.name)
+      if (entry.isDirectory()) {
+        mkdirSync(dst, { recursive: true })
+        copyInto(src, dst)
+      } else if (entry.isFile()) {
+        copyFileSync(src, dst)
+      }
+    }
   }
+  mkdirSync(dest, { recursive: true })
+  copyInto(ROOT, dest)
 }
 
 function runGuard(root, guard) {
