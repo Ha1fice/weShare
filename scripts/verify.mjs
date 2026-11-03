@@ -87,6 +87,13 @@ const steps = [
   },
   {
     group: 'repo',
+    name: '敏感文件检查',
+    why: '密钥一旦推到远端就永远留在 git 历史里——即使删除文件也无效',
+    cmd: NODE,
+    args: ['scripts/guards/check-sensitive-files.mjs'],
+  },
+  {
+    group: 'repo',
     name: '护栏非空转自检',
     why: '每条守门测试都必须证明它真的会失败——否则它只是一段会永远通过的代码',
     cmd: NODE,

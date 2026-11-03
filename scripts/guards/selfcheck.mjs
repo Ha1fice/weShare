@@ -90,6 +90,16 @@ const CASES = [
     },
   },
   {
+    guard: 'scripts/guards/check-sensitive-files.mjs',
+    label: '把 .env 纳入 git 追踪，敏感文件护栏必须失败',
+    breakIt(dir) {
+      // .env 在 .gitignore 里，git add 不会收录它——必须用 -f 强制添加，
+      // 这正是"有人不小心提交了密钥"的真实路径
+      writeFileSync(path.join(dir, '.env'), 'SECRET=hunter2\n', 'utf8')
+      spawnSync('git', ['add', '-f', '.env'], { cwd: dir })
+    },
+  },
+  {
     guard: 'scripts/guards/check-test-manifest.mjs',
     label: '测试文件落在 vitest include 范围外，清单护栏必须失败',
     breakIt(dir) {
@@ -106,11 +116,14 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', 
 /**
  * 复制仓库内容到临时目录。
  *
- * 注意两点：
+ * 注意三点：
  * 1. cpSync(ROOT, dir) 在 dir 已存在时会把 ROOT 复制成 dir/<basename>，
  *    那样护栏按自身位置解析出的 ROOT 就会错位。必须逐项复制内容。
  * 2. pnpm 会在每个子包下建 node_modules，必须在任意层级跳过——
  *    否则复制几百 MB 依赖会让自检慢到超时。
+ * 3. 初始化 git 并加入所有文件：有些护栏（如敏感文件检查）依赖
+ *    `git ls-files` 的输出，没有 git 仓库时它们只会报零覆盖，
+ *    非空转验证就失去意义。
  */
 function copyRepoContents(dest) {
   function copyInto(srcDir, destDir) {
@@ -128,6 +141,10 @@ function copyRepoContents(dest) {
   }
   mkdirSync(dest, { recursive: true })
   copyInto(ROOT, dest)
+
+  // 初始化 git 并追踪所有文件（让依赖 git 的护栏能正常工作）
+  spawnSync('git', ['init', '-q'], { cwd: dest })
+  spawnSync('git', ['add', '-A'], { cwd: dest })
 }
 
 function runGuard(root, guard) {

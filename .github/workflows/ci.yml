@@ -26,9 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -54,15 +54,6 @@ jobs:
           fi
           echo "行尾一致"
 
-      - name: 未追踪的敏感文件
-        shell: bash
-        run: |
-          if git ls-files | grep -Ei '(^|/)(\.env$|\.env\..+|.*\.pem$|.*\.key$|id_rsa|.*\.p12$|.*\.pfx$)'; then
-            echo "::error::检测到疑似被追踪的敏感文件"
-            exit 1
-          fi
-          echo "无敏感文件被追踪"
-
   # ===================================================================
   # 代码层：Phase 1 工程骨架就位后启用。
   #
@@ -75,13 +66,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9.14.4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
