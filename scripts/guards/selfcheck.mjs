@@ -81,12 +81,16 @@ const CASES = [
     },
   },
   {
-    guard: 'scripts/guards/check-dialect-isolation.mjs',
-    label: '在业务代码里写入 jsonb，方言隔离护栏必须失败',
+    guard: 'scripts/guards/check-data-access-leak.mjs',
+    label: '在业务代码里 import @prisma/client，数据访问隔离护栏必须失败',
     breakIt(dir) {
       const dir2 = path.join(dir, 'apps', 'api', 'src')
       mkdirSync(dir2, { recursive: true })
-      writeFileSync(path.join(dir2, 'leak.ts'), "export const bad = 'jsonb'\n", 'utf8')
+      writeFileSync(
+        path.join(dir2, 'leak.ts'),
+        "import { PrismaClient } from '@prisma/client'\nexport const c = PrismaClient\n",
+        'utf8',
+      )
     },
   },
   {

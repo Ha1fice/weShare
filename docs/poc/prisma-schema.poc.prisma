@@ -1,0 +1,220 @@
+// PoC：验证架构文档 §7.2 的 10 张表能否完整映射到 Prisma Schema
+// 重点验证：JSON 字段、枚举、级联删除、唯一约束、部分索引
+
+generator client {
+  provider = "prisma-client"
+  output   = "./generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String    @id
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  displayName  String    @map("display_name")
+  avatarKey    String?   @map("avatar_key")
+  status       String    @default("active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+
+  sessions      Session[]
+  ownedSpaces   Workspace[]
+  memberships   WorkspaceMember[]
+  ownedNodes    Node[]
+  aclEntries    NodeAcl[]
+  versions      NodeVersion[]
+  attachments   Attachment[]
+  deletedNodes  Node[]      @relation("NodeDeletedBy")
+  updatedDocs   DocumentContent[]
+  auditEvents   AuditEvent[]
+
+  @@map("users")
+}
+
+model Session {
+  id         String   @id
+  userId     String   @map("user_id")
+  tokenHash  Bytes    @unique @map("token_hash")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastSeenAt DateTime @map("last_seen_at")
+  userAgent  String?  @map("user_agent")
+  ip         String?
+  revokedAt  DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+model Workspace {
+  id           String    @id
+  name         String
+  ownerId      String    @map("owner_id")
+  defaultRole  String    @default("edit") @map("default_role")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  owner     User              @relation(fields: [ownerId], references: [id])
+  members   WorkspaceMember[]
+  nodes     Node[]
+  aclScopes NodeAcl[]
+  attachments Attachment[]
+  auditEvents AuditEvent[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id")
+  role        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+model Node {
+  id           String    @id
+  workspaceId  String    @map("workspace_id")
+  parentId     String?   @map("parent_id")
+  type         String
+  title        String    @default("")
+  titleNorm    String    @default("") @map("title_norm")
+  ownerId      String    @map("owner_id")
+  visibility   String    @default("workspace")
+  sortOrder    Int       @default(0) @map("sort_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  deletedBy    String?   @map("deleted_by")
+  trashRootId  String?   @map("trash_root_id")
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent      Node?      @relation("NodeTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Node[]     @relation("NodeTree")
+  owner       User       @relation(fields: [ownerId], references: [id])
+  deletedByUser User?    @relation("NodeDeletedBy", fields: [deletedBy], references: [id])
+  trashRoot   Node?      @relation("NodeTrash", fields: [trashRootId], references: [id])
+  inTrash     Node[]     @relation("NodeTrash")
+  content     DocumentContent?
+  acl         NodeAcl[]
+  versions    NodeVersion[]
+  attachments Attachment[]
+
+  @@index([workspaceId, parentId, deletedAt, sortOrder])
+  @@index([titleNorm])
+  @@map("nodes")
+}
+
+model DocumentContent {
+  nodeId              String    @id @map("node_id")
+  contentSchemaVersion Int     @default(1) @map("content_schema_version")
+  yjsSchemaVersion    Int       @default(1) @map("yjs_schema_version")
+  contentJson         Json?     @map("content_json")
+  yjsState            Bytes?    @map("yjs_state")
+  stateVector         Bytes?    @map("state_vector")
+  docSizeBytes        Int       @default(0) @map("doc_size_bytes")
+  revision            Int       @default(0)
+  textPreview         String?   @map("text_preview")
+  charCount           Int       @default(0) @map("char_count")
+  updatedBy           String?   @map("updated_by")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  storedAt            DateTime? @map("stored_at")
+
+  node      Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  updatedByUser User? @relation(fields: [updatedBy], references: [id])
+
+  @@map("document_contents")
+}
+
+model NodeAcl {
+  id          String   @id
+  nodeId      String   @map("node_id")
+  subjectType String   @map("subject_type")
+  subjectId   String   @map("subject_id")
+  role        String
+  effect      String   @default("allow")
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  node      Node      @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  creator   User      @relation(fields: [createdBy], references: [id])
+  workspace Workspace? @relation(fields: [subjectId], references: [id])
+
+  @@unique([nodeId, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+  @@map("node_acl")
+}
+
+model NodeVersion {
+  id                    String   @id
+  nodeId                String   @map("node_id")
+  versionNo             Int      @map("version_no")
+  kind                  String
+  label                 String?
+  contentSchemaVersion  Int      @default(1) @map("content_schema_version")
+  yjsSchemaVersion      Int      @default(1) @map("yjs_schema_version")
+  contentJson           Json     @map("content_json")
+  yjsState              Bytes?   @map("yjs_state")
+  createdBy             String?  @map("created_by")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  node    Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  creator User? @relation(fields: [createdBy], references: [id])
+
+  @@unique([nodeId, versionNo])
+  @@index([nodeId, versionNo])
+  @@map("node_versions")
+}
+
+model Attachment {
+  id           String   @id
+  workspaceId  String   @map("workspace_id")
+  nodeId       String?  @map("node_id")
+  uploaderId   String   @map("uploader_id")
+  originalName String   @map("original_name")
+  mimeType     String   @map("mime_type")
+  byteSize     Int      @map("byte_size")
+  sha256       String
+  storageKey   String   @unique @map("storage_key")
+  width        Int?
+  height       Int?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  node      Node?     @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  uploader  User      @relation(fields: [uploaderId], references: [id])
+
+  @@index([nodeId])
+  @@map("attachments")
+}
+
+model AuditEvent {
+  id          Int      @id @default(autoincrement())
+  workspaceId String   @map("workspace_id")
+  actorId     String?  @map("actor_id")
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String?  @map("target_id")
+  metadata    Json
+  ip          String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  actor     User?     @relation(fields: [actorId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_events")
+}

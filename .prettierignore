@@ -15,3 +15,6 @@ pnpm-lock.yaml
 # 架构文档含中文表格，Prettier 重排会插入空格破坏可读性。
 # 文档由人工维护格式，不交给 Prettier。
 docs/architecture/
+
+# Prisma 生成的 Client —— 自动生成，不手工格式化
+packages/db/generated/

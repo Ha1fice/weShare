@@ -14,7 +14,14 @@ import prettier from 'eslint-config-prettier'
  */
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', '**/*.d.ts'],
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '**/*.d.ts',
+      // Prisma 生成的 Client —— 自动生成，不参与 lint
+      'packages/db/generated/**',
+    ],
   },
 
   // 通用 JS 规则

@@ -42,7 +42,7 @@ jobs:
 
       - name: 护栏非空转自检
         shell: bash
-        # 这条最慢（约 3s），但价值最高：证明每条护栏真的会失败
+        # 这条最慢（约 13s），但价值最高：证明每条护栏真的会失败
         run: bash scripts/ci-run.sh "护栏自检" node scripts/guards/selfcheck.mjs
 
       - name: 行尾一致性（不应有 CRLF 入库）
@@ -55,7 +55,7 @@ jobs:
           echo "行尾一致"
 
   # ===================================================================
-  # 代码层：Phase 1 工程骨架就位后启用。
+  # 代码层：工程骨架与业务代码的门禁。
   #
   # 步骤清单的唯一真源在 scripts/verify.mjs，这里只说"跑哪一组"。
   # 历史上两边各抄一份步骤，改了一边忘了另一边，结果是"本地有这条门禁、
@@ -79,6 +79,11 @@ jobs:
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
+
+      - name: 生成 Prisma Client
+        # packages/db/generated/ 不入库，CI 上必须重新生成。
+        # 显式执行而不依赖 postinstall 钩子——某些环境会设置 ignore-scripts。
+        run: pnpm --filter @weshare/db exec prisma generate
 
       - name: 快速层验证（typecheck / lint / test）
         shell: bash

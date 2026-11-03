@@ -9,21 +9,25 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "postinstall": "prisma generate",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
     "build": "tsc -p tsconfig.json",
-    "db:migrate": "tsx scripts/migrate.mjs",
-    "db:seed": "tsx scripts/seed.mjs",
-    "db:verify": "tsx scripts/verify-migrations.mjs"
+    "db:generate": "prisma generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:verify": "tsx scripts/verify-migrations.ts",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
-    "@libsql/client": "^0.18.0",
-    "@weshare/shared": "workspace:*",
-    "drizzle-orm": "^0.45.4"
+    "@libsql/client": "^0.17.4",
+    "@prisma/adapter-libsql": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "@weshare/shared": "workspace:*"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.11",
+    "prisma": "^7.10.1",
     "tsx": "^4.23.15"
   }
 }

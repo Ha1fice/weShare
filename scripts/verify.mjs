@@ -71,11 +71,11 @@ const steps = [
   },
   {
     group: 'repo',
-    name: '方言隔离（不变式 I7）',
-    why: 'packages/db 之外出现方言标识，会让"后期切 PostgreSQL"从重写变成改配置',
+    name: '数据访问隔离（不变式 I7）',
+    why: '业务层直接 import Prisma Client 或数据库驱动，会让"换数据库只改 packages/db"变成谎言',
     enabled: () => exists(path.join(ROOT, 'apps')) || exists(path.join(ROOT, 'packages')),
     cmd: NODE,
-    args: ['scripts/guards/check-dialect-isolation.mjs'],
+    args: ['scripts/guards/check-data-access-leak.mjs'],
   },
   {
     group: 'repo',

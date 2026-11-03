@@ -1,11 +1,11 @@
 # 项目总体架构与 MVP 实施方案
 
 > 文档性质：Phase 0 交付物，指导 Phase 1–5 的实施基线  
-> 版本：v1.2（2026-11-03）  
-> 状态：**已确认**（v1.0 经评审后修订为 v1.1；v1.2 补开源与治理，变更清单见 §16）  
+> 版本：v1.3（2026-11-03）  
+> 状态：**已确认**（v1.0 经评审后修订为 v1.1；v1.2 补开源与治理；v1.3 完成 ORM 替换为 Prisma；变更清单见 §16）  
 > 适用范围：整个平台（平台层 / 文档编辑器 / 表格编辑器 / 协同服务 / 数据层）  
 > 上位依据：`项目总指导`（产品方向与优先级）＞ 本文 ＞ 三份技术调研报告  
-> 已决事项：数据库 = SQLite 优先 + Drizzle ORM 多方言（§15-D2）；前端 UI = Reka UI + UnoCSS（§15-D1）；开源发布 = Apache-2.0 + GitHub（§15-D6）
+> 已决事项：数据库 = SQLite 单文件 + **Prisma 7.10.1**（§15-D2/D2a）；前端 UI = Reka UI + UnoCSS（§15-D1）；开源发布 = Apache-2.0 + GitHub（§15-D6）
 
 本文不重复介绍 Tiptap、Yjs、Univer 的基本概念。三份调研报告已经覆盖了组件能力与许可证事实；本文只回答一个问题：**如何把它们组合成一个可交付、可验收、可持续演进的产品**。
 
@@ -15,7 +15,7 @@
 
 1. **产品形态**：先交付"平台骨架 + 原生富文本文档 + 真实多人协同"这条闭环，表格与版本/评论后置。第一版不碰 DOCX/XLSX、不碰分页、不碰 ONLYOFFICE。
 2. **技术形态**：pnpm monorepo，三个进程——`web`（Vue 3 SPA）、`api`（Fastify，REST）、`collab`（Hocuspocus，WebSocket），共享一个数据库与一个文件存储目录。
-3. **数据库形态**：**SQLite 单文件优先，经 Drizzle ORM 访问**。表结构、查询、迁移全部由 ORM 表达，**业务代码不出现方言 SQL**；方言差异集中在 `packages/db`，为后期切 PostgreSQL 留出扩展空间。SQLite 让"数据库"随产物一起交付，不需要单独运维一个数据库服务。
+3. **数据库形态**：**SQLite 单文件优先，经 Prisma 7.10.1 访问**。表结构、查询、迁移全部由 ORM 表达，**业务代码不接触 ORM**——所有数据访问经 `packages/db` 的 Repository 接口，为后期切 PostgreSQL 留出扩展空间。SQLite 让"数据库"随产物一起交付，不需要单独运维一个数据库服务。
 4. **内容事实源**：正文以 Y.Doc 为唯一事实源，ProseMirror JSON 是**只读物化结果**（供列表摘要、搜索、导出、版本对比）。业务元数据（标题/归属/创建者/权限/时间）独立存 `nodes` 表，正文存 `document_contents` 表。
 5. **权限形态**：服务端会话 Cookie + 服务端角色判定；WebSocket 握手复用同一 Cookie，`onAuthenticate` 判定并设置 `connection.readOnly`，**只读由服务端强制**，前端隐藏按钮只作体验优化。
 6. **自动保存形态**：Phase 2 用带 revision 乐观锁的 REST 保存；Phase 3 起切换为协同落库，REST 内容写入对已启用协同的文档返回 `409`，**同一文档永不并存两条写入路径**。
@@ -134,7 +134,7 @@
                     │  users/sessions/workspaces/members                  │
                     │  nodes（业务树+元数据）  document_contents（正文）    │
                     │  node_acl / node_versions / attachments / audit      │
-                    │  ▲ 全部访问经 Drizzle ORM，方言差异只存在于此层      │
+                    │  ▲ 全部访问经 Prisma + Repository，方言只存在于此层 │
                     └───────────────────────┬──────────────────────────┘
                                             │
                     ┌───────────────────────▼──────────────────────────┐
@@ -144,9 +144,22 @@
   反向代理（生产）：nginx，同一域名下 / → 静态资源、/api → api、/collab → collab
 ```
 
-**数据库形态说明（v1.1 变更）**：默认使用 **SQLite 单文件**（`data/weshare.db`），由 `@libsql/client` 驱动、Drizzle ORM 访问。选它的三个理由：(a) 私有化交付场景里"少一个要运维的服务"价值高于"换库的灵活性"；(b) 单机部署下 SQLite 的写并发（单写者 + WAL）足以支撑 MVP 规模；(c) 备份 = 复制文件，成本近零。代价是写并发受限，因此**所有落库走短事务**，且 `collab` 与 `api` 的写入不能互相长事务阻塞（见 §9.5）。
+**数据库形态说明（v1.2 修订）**：默认使用 **SQLite 单文件**（`data/weshare.db`），通过 **Prisma 7.10.1** 访问，驱动为 `@prisma/adapter-libsql`。选 SQLite 的三个理由：(a) 私有化交付场景里"少一个要运维的服务"价值高于"换库的灵活性"；(b) 单机部署下 SQLite 的写并发（单写者 + WAL）足以支撑 MVP 规模；(c) 备份 = 复制文件，成本近零。代价是写并发受限，因此**所有落库走短事务**，且 `collab` 与 `api` 的写入不能互相长事务阻塞（见 §9.5）。
 
-**为什么用 `@libsql/client` 而不是 `better-sqlite3`**：`better-sqlite3` 是原生模块，安装时需 node-gyp 编译——Windows 上还要 MSBuild + ClangCL 工具集（本机实测编译失败）。这会让 CI 环境与"纯内网离线交付"都变脆。`@libsql/client` 提供预编译二进制，装完即用；SQLite 文件格式完全兼容，Drizzle 官方支持 `drizzle-orm/libsql` 驱动，许可证 MIT。
+**为什么用 Prisma 而不是 Drizzle（v1.2 修订）**：Drizzle 是 SQL-like 的 query builder，业务代码里会出现 `db.select().from()` 这类接近 SQL 的表达——"不写方言 SQL"这条不变式只能靠纪律维持，半年内必然被绕过。Prisma 的 Model API 把数据访问收敛成"对领域对象的操作"，配合 `packages/db` 的 Repository 边界，**业务层根本不接触 ORM**，隔离是结构性的而非纪律性的。
+
+**Prisma 7 + SQLite 的四个已知限制**（全部已实测确认，处理方式写在 `packages/db/prisma/schema.prisma` 文件头）：
+
+1. **Json 字段不能用 `@default`**。Prisma 在 SQLite 上生成 `JSONB NOT NULL DEFAULT {}`，而 SQLite 既不认 `JSONB` 类型也不认 `{}` 默认值，会报 `unrecognized token: "{"`（Prisma 官方 issue #26571，标记 Major）。→ JSON 字段默认值在应用层（Repository）补齐。
+2. **枚举不产生数据库级 CHECK 约束**。Prisma 在 SQLite 上把 enum 生成为 `TEXT`，约束只在 Client 层。→ API 边界另用 Zod 兜底；绕过 Prisma 写入的脏数据不会被数据库拦住（已知限制，见 §15.2）。
+3. **Prisma 不支持部分索引与表达式索引**。→ 必要的定制索引在迁移 SQL 中手工补入（见 §7.3）；`users.email` 的大小写不敏感唯一改为 `emailLower` 列 + 普通唯一索引。
+4. **自增主键必须用 `Int`**。`BigInt @default(autoincrement())` 在 SQLite 上生成 `BIGINT NOT NULL PRIMARY KEY`，而 SQLite 的 rowid 自增要求 `INTEGER PRIMARY KEY`，插入会失败（`NullConstraintViolation`）。→ `audit_events.id` 用 `Int`。
+
+**Prisma 7 的三个破坏性变更**（从 Drizzle 迁入时必须遵守）：
+
+- 连接 URL 不能写在 schema 的 datasource 里，必须放 `prisma.config.ts`；
+- 必须通过 driver adapter 构造 Client（`new PrismaClient({ adapter })`）；
+- `prisma-client-js` generator 已弃用，改用 `prisma-client` + 必填 `output`（生成到源码树）。
 
 **扩展路径**：ORM 层是唯一的数据库出口，`packages/db` 内按方言分文件（`schema.sqlite.ts` / `schema.pg.ts`）与驱动分文件（`driver.sqlite.ts` / `driver.pg.ts`），业务层只依赖 `db.query.*` 抽象接口。切换 PostgreSQL 时只替换 `packages/db` 与连接配置，业务代码与 API 契约不变。切换的触发条件写在 §15-D2。
 
@@ -157,7 +170,7 @@
 | 平台面 | `apps/web` + `apps/api` | 身份、空间、目录、文档元数据、权限、回收站、版本、附件 |
 | 编辑面 | `apps/web/editor` + `packages/doc-schema` | 文档结构与编辑体验；**不含**业务权限、导航、通知 |
 | 协同面 | `apps/collab` | 连接鉴权、Yjs 同步、在线状态、落库；**不解析业务语义**（不判断"这段该不该改"） |
-| 数据面 | `packages/db`（Drizzle ORM + SQLite）+ 文件存储 | 所有持久化事实；约束是最后一道防线；**方言差异不得上浮到业务层** |
+| 数据面 | `packages/db`（Prisma ORM + SQLite）+ 文件存储 | 所有持久化事实；约束是最后一道防线；**ORM 与方言不得上浮到业务层** |
 
 ### 3.3 三条关键链路
 
@@ -241,7 +254,8 @@ MVP **不要求容器化**：交付形态是"一个目录 + 一个启动脚本"�
 | `reka-ui` | 2.11.0 | MIT | headless UI 基础件（无样式、无数据层耦合） |
 | `unocss` | 66.12.0 | MIT | 原子化 CSS |
 | `fastify` | 5.12.8 | MIT | HTTP 服务 |
-| `drizzle-orm` / `drizzle-kit` | 0.45.4 / 0.31.11 | Apache-2.0 | ORM + 迁移生成 |
+| `prisma` / `@prisma/client` | 7.10.1 | Apache-2.0 | ORM + 迁移生成 + Client 生成 |
+| `@prisma/adapter-libsql` | 7.10.1 | Apache-2.0 | SQLite 驱动适配器（Prisma 7 必需） |
 | `@libsql/client` | 0.18.0 | MIT | SQLite 驱动（预编译二进制，无 node-gyp 编译） |
 | `@univerjs/core` / `@univerjs/presets` | 1.3.1 | Apache-2.0 | 表格（Phase 5） |
 
@@ -264,7 +278,7 @@ MVP **不要求容器化**：交付形态是"一个目录 + 一个启动脚本"�
 | 前端（编辑器） | 文档结构编辑、快捷键、工具栏、图片插入、保存/同步状态展示 | 业务权限、文档元数据写库、HTML 直出 |
 | api | 身份认证、授权判定、树操作、元数据、单机保存、版本、附件、审计 | 解析 Yjs 二进制、处理协同消息 |
 | collab | WS 鉴权、Yjs 同步、awareness、落库、压缩、快照触发 | 业务规则（谁是 owner、文档该不该可见）、目录树 |
-| `packages/db`（Drizzle ORM） | 持久化、约束、事务、并发控制、迁移生成 | 业务规则以外的任何逻辑（触发器只做 updated_at 之类）；**不含任何方言判断** |
+| `packages/db`（Prisma ORM） | 持久化、约束、事务、并发控制、迁移生成 | 业务规则以外的任何逻辑；**不含任何方言判断**；**不向业务层暴露 Prisma 类型** |
 | 文件存储 | 二进制对象 | 权限（由 api 判定后代理读取） |
 
 ### 4.2 七条架构不变式（违反即视为缺陷，不是"优化建议"）
@@ -275,7 +289,7 @@ MVP **不要求容器化**：交付形态是"一个目录 + 一个启动脚本"�
 - **I4 元数据与正文分离**：标题、归属、权限、时间在 `nodes`；正文在 `document_contents`。禁止把标题塞进 PM JSON。
 - **I5 版本标记**：每个正文持久化写入都带版本标记；读路径遇到未知版本必须拒绝渲染并报错，不得"猜着解析"。**两条演进线分开计版**：`content_schema_version`（PM JSON 镜像，可惰性迁移）与 `yjs_schema_version`（Y.Doc 结构，只能离线批处理），禁止共用一个 `schema_version` 字段。
 - **I6 客户端不可直达存储**：客户端只能通过 api 访问文件；不存在可猜测的公开静态路径。
-- **I7 方言不可上浮**：业务代码（`apps/*` 除 `db/` 外、`packages/*`）不得出现方言相关 SQL、类型名或数据库特有函数；所有数据访问经 `packages/db` 的方言无关接口。ORM 的 schema 定义与迁移是唯一的建表途径，**禁止手写 DDL**。
+- **I7 数据访问唯一出口**：业务层不得直接依赖 Prisma Client 或数据库驱动。所有数据访问必须经过 `packages/db` 暴露的 Repository 接口。Repository 实现允许使用 Prisma Client，但不得向 Service 层暴露 Prisma Model、Prisma 类型或数据库驱动类型。数据库专属 SQL 和迁移定制只能存在于 `packages/db` 内。ORM 的 schema 定义与迁移是唯一的建表途径，**禁止手写 DDL**。
 
 ---
 
@@ -399,29 +413,40 @@ workspaces ──1:N── audit_events
 
 设计取舍：**统一 `nodes` 表承载文件夹与文档**。理由是目录树只有一种结构，统一表让"移动/删除子树/回收站/权限目标"都只有一套代码；文档特有字段下沉到 `document_contents`，不污染树表。
 
-### 7.2 表结构定义（Drizzle ORM，禁止手写 DDL）
+### 7.2 表结构定义（Prisma Schema，禁止手写 DDL）
 
-**原则**：表结构的唯一来源是 `packages/db/src/schema/` 下的 Drizzle schema 定义；迁移由 `drizzle-kit generate` 产出并检入仓库。**任何人不得手写 `CREATE TABLE`**（Phase 1 验收第 8 条据此判定）。业务层只见 `packages/db` 导出的仓储接口，看不到 driver、看不到表定义、看不到 SQL。
+**原则**：表结构的唯一来源是 `packages/db/prisma/schema.prisma`；迁移由 `prisma migrate dev` 生成、`prisma migrate deploy` 应用，检入 `packages/db/prisma/migrations/`。**任何人不得手写 `CREATE TABLE`**（Phase 1 验收第 8 条据此判定）。业务层只见 `packages/db` 导出的 Repository 接口，看不到 Prisma Client、看不到表定义、看不到 SQL。
 
-**方言策略（三层隔离）**
+**三层隔离**
 
-| 层 | 内容 | 允许出现方言差异？ |
+| 层 | 内容 | 允许出现 Prisma / 方言差异？ |
 |---|---|---|
-| `packages/db/src/schema/` | 表结构定义，按方言分文件（`schema.sqlite.ts` / `schema.pg.ts`），共享列工厂 | 是，但只允许类型映射与索引能力差异 |
-| `packages/db/src/repo/` | 仓储方法（`nodes.listChildren()` 等），只用 Drizzle 查询构造器 | 否 |
-| `apps/*`、`packages/*`（db 除外） | 业务逻辑 | **否**（不变式 I7） |
+| `packages/db/prisma/schema.prisma` | 表结构定义（Prisma Schema） | 是 |
+| `packages/db/prisma/migrations/*/migration.sql` | 迁移 SQL + Prisma 无法表达的定制索引 | 是 |
+| `packages/db/src/repo/implementations.ts` | Repository 实现，负责 Prisma ↔ 领域类型转换 | 是（仅此一处） |
+| `packages/db/src/repo/interfaces.ts` | Repository 接口（业务领域类型） | 否 |
+| `apps/*`、`packages/*`（db 除外） | 业务逻辑 | **否**（不变式 I7：不得接触 ORM 与驱动） |
 
-**类型映射表**
+**Repository 层约定**
 
-| 逻辑类型 | SQLite（默认） | PostgreSQL（预留） | 备注 |
+- 按**业务聚合**组织，不按数据库表拆分：`users` / `workspaces` / `nodes` / `contents` / `acl` / `versions` / `attachments` / `audit` 八个仓储，各自对应一个业务用例聚合。
+- 接口只用**业务领域类型**（`packages/db/src/repo/types.ts`）。数据库列名 `title_norm` 在领域里是 `titleNormalized`，`email_lower` 是 `email`——领域类型与列名解耦。
+- 不提供无业务意义的通用 CRUD。方法是业务动作（`softDelete`、`listTrash`、`listAncestors`），不是 `listAll` / `findById` 堆砌。
+- **事务边界在实现层**。跨表原子操作（如"建空间 + 加 owner 成员"）由 Repository 内部用 `$transaction` 完成，不让 Service 层跨 Repository 拼事务。
+
+**类型映射**
+
+| 逻辑类型 | Prisma 类型 | SQLite 落地 | 备注 |
 |---|---|---|---|
-| 主键 / 外键 | `text`（应用层 `crypto.randomUUID()`） | `uuid` + `gen_random_uuid()` | 均为字符串主键，禁止整型自增暴露给业务 |
-| 时间戳 | `integer` + `mode: 'timestamp_ms'` | `timestamptz` | 一律 UTC 毫秒 |
-| JSON | `text` + `mode: 'json'` | `jsonb` | JSON 内容一律走 ORM 的 json 模式 |
-| 二进制（Yjs 状态） | `blob` | `bytea` | |
-| IP | `text` | `inet` | |
-| 布尔 | `integer` (0/1) | `boolean` | |
-| 标题检索 | 普通列 + 大小写不敏感前缀匹配 | `pg_trgm` + GIN | SQLite 无 trigram：MVP 用 `title_norm` 列 + `LIKE 'kw%'`；数据量上来后再接 FTS5 虚拟表 |
+| 主键 / 外键 | `String @id` | `TEXT` | 应用层 `crypto.randomUUID()` 生成 |
+| 自增主键 | `Int @default(autoincrement())` | `INTEGER PRIMARY KEY AUTOINCREMENT` | **必须 Int**，BigInt 在 SQLite 上无法自增 |
+| 时间戳 | `DateTime` | `DATETIME` | 一律 UTC |
+| JSON | `Json` | `TEXT` | **不能用 `@default`**（见 §3.1 限制 1） |
+| 二进制（Yjs 状态） | `Bytes` | `BLOB` | |
+| IP | `String` | `TEXT` | |
+| 枚举 | `String` + 校验 | `TEXT` | **无数据库级 CHECK 约束**（见 §3.1 限制 2） |
+| 标题检索 | `String`（`titleNorm`） | `TEXT` + 索引 | 小写去空白，前缀匹配 |
+| 邮箱唯一 | `String @unique`（`emailLower`） | `TEXT` + 唯一索引 | 代替 `lower(email)` 表达式索引（见 §7.3） |
 
 **SQLite 特有约束（实现时必须遵守）**
 
@@ -437,7 +462,8 @@ workspaces ──1:N── audit_events
 -- 用户与会话
 users
   id             uuid/text   PK
-  email          text        唯一（大小写不敏感，唯一索引建在 lower(email) 上）
+  email          text        原始邮箱
+  email_lower    text        唯一（小写去空白）—— 承担大小写不敏感唯一约束
   password_hash  text        scrypt: scrypt$N$r$p$salt$hash
   display_name   text
   avatar_key     text        nullable
@@ -582,6 +608,33 @@ audit_events
 | SQLite 写并发 | 单写者模型。所有写入走短事务；`collab` 落库与 `api` 写入不得互相长事务阻塞（见 §9.5） |
 | 时区 | 一律 UTC 毫秒时间戳，前端按浏览器时区渲染 |
 | 外键 | SQLite 必须显式 `PRAGMA foreign_keys = ON`，否则所有 FK 约束形同虚设 |
+
+**索引策略（v1.2 修订：Prisma 无法表达的两个索引）**
+
+Prisma 不支持部分索引（`WHERE` 子句）与表达式索引（`lower(x)`）。这两个索引**不能降级**，实测结论如下：
+
+**1. `nodes_trash_idx` —— 部分索引（保留在迁移 SQL 中）**
+
+回收站查询（附录 A：`GET /api/v1/workspaces/:id/trash`）是高频查询：
+`SELECT ... FROM nodes WHERE workspace_id = ? AND deleted_at IS NOT NULL`
+
+用 `EXPLAIN QUERY PLAN` 实测（2 万节点 / 500 条在回收站）：
+
+| | 查询计划 | 单次查询 | 索引体积 |
+|---|---|---|---|
+| 无索引 | `SCAN nodes`（全表扫描） | 1.833 ms | — |
+| 普通索引 `(workspace_id, deleted_at)` | `SEARCH USING INDEX` | 0.237 ms | **245,760 B（240 KB）** |
+| 部分索引 `+ WHERE deleted_at IS NOT NULL` | `SEARCH USING INDEX` | 0.214 ms | **12,288 B（12 KB）** |
+
+查询计划相同，性能差 9.6%，但**索引体积差 20 倍**——普通索引要覆盖空间内所有节点，部分索引只存已删除的。10 万文档时约 1.2 MB vs 60 KB，差距随数据量持续放大。
+
+→ **保留部分索引**，写在 `prisma/migrations/*/migration.sql` 中（附实测数据注释）。`db:verify` 每次校验其存在且带 `WHERE` 条件（见 `packages/db/scripts/verify-structure.ts`）。
+
+**2. `users_email_lower_uq` —— 表达式索引（改为 emailLower 列）**
+
+Prisma 不支持 `CREATE UNIQUE INDEX ... ON users(lower(email))`。→ 在 `users` 表增加 `email_lower` 列（小写去空白），建普通唯一索引；写入时由 Repository 归一化（`normalizeEmail`）。查询按 `emailLower` 命中。
+
+代价是多一列存储（约 30 字节/用户），换来的是走索引的大小写不敏感唯一，且不需要表达式索引。
 
 ---
 
@@ -801,16 +854,22 @@ weShare/
 │  ├─ doc-schema/                   # PM Schema、扩展清单、JSON/Y.Doc 转换、迁移
 │  ├─ authz/                        # 权限判定纯函数 + 单测（api/collab 共用）
 │  └─ db/                           # 数据库唯一出口（ORM 层）
+│     ├─ prisma/
+│     │  ├─ schema.prisma            # 表结构定义（唯一真源）
+│     │  └─ migrations/              # prisma migrate 生成的迁移（含定制索引），检入仓库
 │     ├─ src/
-│     │  ├─ schema/                 # 表结构定义（按方言分文件）
-│     │  │  ├─ schema.sqlite.ts     # 默认：SQLite
-│     │  │  ├─ schema.pg.ts         # 预留：PostgreSQL
-│     │  │  └─ columns.ts           # 列工厂（类型映射的唯一处）
-│     │  ├─ driver.sqlite.ts        # better-sqlite3 驱动 + pragma 设置
-│     │  ├─ driver.pg.ts            # 预留：pg 驱动
-│     │  ├─ repo/                   # 仓储方法（nodes/users/acl/versions/...）
-│     │  └─ index.ts                # 导出方言无关接口
-│     └─ migrations/                # drizzle-kit 生成的迁移，检入仓库
+│     │  ├─ client.ts                # Prisma Client 工厂（adapter + pragma），包内私有
+│     │  ├─ repo/                    # Repository（按业务聚合组织）
+│     │  │  ├─ types.ts              # 业务领域类型（对外契约）
+│     │  │  ├─ interfaces.ts         # Repository 接口
+│     │  │  └─ implementations.ts    # Prisma 实现（唯一允许出现 Prisma 类型的地方）
+│     │  └─ index.ts                 # 对外导出：只含领域类型与 Repository 接口
+│     ├─ scripts/
+│     │  ├─ migrate.ts               # 迁移执行（migrate dev / deploy）
+│     │  ├─ seed.ts                  # 示例数据（经 Repository 写入）
+│     │  ├─ verify-migrations.ts     # 迁移幂等 + 漂移检查
+│     │  └─ verify-structure.ts      # 结构逐项对照（对照基准写在此文件）
+│     └─ prisma.config.ts            # Prisma 7 配置（schema 路径 + 连接 URL）
 ├─ infra/
 │  ├─ scripts/                      # 备份（VACUUM INTO）、离线依赖固化、迁移执行
 │  ├─ systemd/                      # 生产：api/collab 进程单元
@@ -823,7 +882,7 @@ weShare/
 
 关键点：
 - `packages/authz` 与 `packages/doc-schema` 是**跨进程共享的纯逻辑**，api 与 collab 共用同一份权限算法，避免"REST 判得对、WS 判得错"。
-- `packages/db` 是**唯一的数据库出口**（不变式 I7）。`apps/api` 与 `apps/collab` 都只能通过它的仓储接口访问数据，不得直接引用 driver 或表定义。
+- `packages/db` 是**唯一的数据库出口**（不变式 I7）。`apps/api` 与 `apps/collab` 都只能通过它的 Repository 接口访问数据，不得直接 import Prisma Client、driver 或表定义。Repository 接口用业务领域类型，不暴露 Prisma Model。
 - `apps/web/src/editor` 不得 import `pages/` 里的任何东西；平台与编辑器通过 props/事件通信（符合总指导 7.1）。
 - 表格编辑器（Phase 5）落在 `apps/web/src/sheet/`，与 `editor/` 平级，互不依赖。
 
@@ -882,7 +941,7 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 5. 跨空间越权：用 A 空间会话访问 B 空间任何 ID，全部 404/403，无信息泄露（不返回"存在但无权"）。
 6. 树深度 > 8 被拒绝；移动到自身子树被拒绝；**移动/创建时目标父级无权限返回 403**；删除父目录后子文档全部进入回收站且可整批还原。
 7. 刷新页面后会话保持；登出后旧 Cookie 立即失效（服务端会话删除）。
-8. 数据库变更只通过 `drizzle-kit generate` 产生的迁移文件执行，**仓库中不存在手写 DDL**；迁移可重复执行（空库执行一次得完整结构，二次执行无副作用）。
+8. 数据库变更只通过 `prisma migrate dev` 产生的迁移文件执行，**仓库中不存在手写 DDL**；迁移可重复执行（空库执行一次得完整结构，二次执行无副作用）；迁移后结构与 §7.2 逐项一致。
 9. **方言无关性检查**：在 `apps/` 与 `packages/`（除 `packages/db`）中检索不到方言相关标识（`sqlite`、`pg_trgm`、`jsonb`、`timestamptz`、`bytea` 等），CI 硬失败。
 10. **SQLite 正确性检查**：`PRAGMA foreign_keys` 为 ON（用测试断言级联删除真实生效）；删除父节点后子节点确实消失。
 
@@ -958,9 +1017,11 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 | R11 | 依赖漂移（Tiptap 调整开源边界） | 低中 | 被迫付费 | 锁版本 + 只用 MIT 包 + CI 许可证门禁 + 关键能力不依赖付费扩展 |
 | R12 | 纯内网交付无法安装依赖 | 中 | 交付失败 | Phase 1 起维护 `pnpm fetch` 离线包与镜像清单；CI 记录依赖树快照 |
 | **R13** | **SQLite 单写者导致落库竞争**（v1.1 新增） | 中 | 协同落库延迟、写入失败 | 短事务约束（§9.5）+ `busy_timeout` + 写失败重试告警 + WAL；触发切库条件见 §15-D2 |
-| **R14** | **方言泄漏到业务层**（v1.1 新增） | 中 | 后期切 PostgreSQL 变成重写 | 不变式 I7 + CI 方言标识扫描（Phase 1 验收 9）+ `packages/db` 唯一出口 |
+| **R14** | **ORM 泄漏到业务层**（v1.1 新增，v1.2 修订） | 中 | 后期切 PostgreSQL 变成重写 | 不变式 I7 + CI 数据访问隔离扫描（Phase 1 验收 9）+ `packages/db` 唯一出口 |
 | **R15** | **WS 跨站劫持**（v1.1 新增） | 高 | 未登录攻击者读取文档 | 握手校验 Origin 白名单 + Phase 3 验收 7 安全用例 |
 | **R16** | **迁移桥并发覆盖丢内容**（v1.1 新增） | 高 | 首次协同打开丢字 | 迁移串行化（§5.4）+ `BEGIN IMMEDIATE` + Phase 3 验收 10 并发用例 |
+| **R19** | **SQLite 无枚举 CHECK 约束**（v1.2 新增） | 低 | 绕过 Prisma 写入的脏枚举值不被数据库拦截 | Prisma Client 层校验 + API 边界 Zod 兜底；已知限制，记录在 §15.2 |
+| **R20** | **Prisma 迁移定制索引与 Schema 漂移**（v1.2 新增） | 中 | 部分索引被后续 `migrate dev` 覆盖，回收站查询退化 | 定制索引写在迁移 SQL 中并加注释说明；`db:verify` 每次校验其存在（`verify-structure.ts`） |
 | **R17** | **版本表容量失控**（v1.1 新增） | 中 | 磁盘写满 | 条数 + 总量双重保留策略（§7.3）+ Phase 4 验收 8 用例 |
 | **R18** | **Reka UI 无数据组件**（v1.1 新增） | 低中 | 目录树/表格自研拖慢工期 | 树与列表在 T4.4 单独排期；必要时引入虚拟滚动库；不因此改用成套 UI 库 |
 
@@ -979,11 +1040,12 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 - T0.6 启用 CI 的 `code-checks` job：提交根 `package.json` 后把 `.github/workflows/ci.yml` 中该 job 的 `if: false` 去掉。判据：CI 在 PR 上跑出 typecheck / lint / test 结果。**已完成**（2026-11-03）。
 
 **T1 数据库**
-- T1.1 `packages/db/src/schema/schema.sqlite.ts` 定义 §7.2 全部表（含 `node_acl.effect`、`content_schema_version` / `yjs_schema_version` 拆分、`parent_id` 级联删除）。
-- T1.2 `packages/db/src/driver.sqlite.ts`：`better-sqlite3` 连接 + `PRAGMA foreign_keys=ON`、`journal_mode=WAL`、`busy_timeout=5000`。
-- T1.3 生成首个迁移并检入 `packages/db/migrations/`；`db:migrate` 脚本可重复执行。判据：空库执行一次即得完整结构，二次执行无副作用。
-- T1.4 seed 脚本：1 个管理员、1 个示例空间、3 个示例文档。判据：`db:seed` 后登录即可见数据。
-- T1.5 方言隔离 CI 脚本：扫描 `apps/`、`packages/`（除 `packages/db`）中的方言标识，命中即失败。判据：故意写入一处 `jsonb` 后 CI 红。
+- T1.1 `packages/db/prisma/schema.prisma` 定义 §7.2 全部表（含 `node_acl.effect`、`content_schema_version` / `yjs_schema_version` 拆分、`parent_id` 级联删除、`email_lower` 唯一列）。判据：schema 与原迁移逐项对照一致，由 `db:verify` 校验。**已完成**（2026-11-03）。
+- T1.2 `packages/db/src/client.ts`：`@prisma/adapter-libsql` 连接 + `PRAGMA foreign_keys=ON`、`journal_mode=WAL`、`busy_timeout=5000`。判据：测试断言三个 PRAGMA 实际生效。**已完成**（2026-11-03）。
+- T1.3 生成首个迁移并检入 `packages/db/prisma/migrations/`（含 Prisma 无法表达的部分索引）；`db:migrate` 脚本可重复执行。判据：空库执行一次即得完整结构，二次执行无副作用。**已完成**（2026-11-03）。
+- T1.4 seed 脚本：1 个管理员、1 个示例空间、3 个示例文档。判据：`db:seed` 后登录即可见数据。**已完成**（2026-11-03）。
+- T1.5 数据访问隔离 CI 脚本：扫描业务层是否 import 了 Prisma Client / 驱动 / `packages/db` 内部路径，命中即失败。判据：故意写入一处 `import { PrismaClient } from "@prisma/client"` 后 CI 红。**已完成**（2026-11-03）。
+- T1.6 Repository 层：`packages/db/src/repo/` 下按业务聚合建 8 个仓储 + `types.ts`（业务领域类型）+ `interfaces.ts`（接口）。判据：业务层不接触 Prisma 类型（由 T1.5 护栏强制）；接口方法对应业务动作而非机械 CRUD。**已完成**（2026-11-03，骨架层）。
 
 **T2 认证与会话**
 - T2.1 scrypt 密码哈希 + 注册/登录/登出/`GET /me`/`PATCH /me`；会话 Cookie（httpOnly、SameSite=Lax、生产 Secure、30 天滑动续期）。
@@ -1022,8 +1084,11 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 | # | 决策 | 状态 | 内容 | 影响 |
 |---|---|---|---|---|
 | D1 | 前端 UI 基础件 | **已定** | **Reka UI 2.x（headless）+ UnoCSS + TypeScript**，Vue 3。基础件无样式，视觉全部由 UnoCSS 承担 | 平台壳的 Dialog/Popover/Dropdown/Tabs 等用 Reka UI 组合；**目录树与表格需自研**（已计入 T4.4 工期，见 R18）。好处是不与设计系统打架，且组件不绑定数据层 |
-| D2 | 数据库 | **已定** | **SQLite 单文件优先 + Drizzle ORM**，通过 `packages/db` 做方言隔离，业务代码无方言 SQL | 不需要 Docker、不需要数据库服务，Phase 1 可当天开工；交付物少一个运维组件。切换 PostgreSQL 的触发条件：单文件 > 10 GB **或** 落库延迟 > 1 s **或** 需要多实例部署 |
-| D2a | SQLite 驱动 | **已定**（2026-11-03 实施时确定） | **`@libsql/client`**，不用 `better-sqlite3` | `better-sqlite3` 是原生模块，需 node-gyp 编译（Windows 上还要 MSBuild + ClangCL 工具集），会让 CI 环境与离线交付都变脆。`@libsql/client` 提供预编译二进制，装完即用；SQLite 文件格式完全兼容，Drizzle 官方支持 `drizzle-orm/libsql` 驱动；许可证 MIT，与依赖树基调一致 |
+| D2 | 数据库 | **已定** | **SQLite 单文件优先 + Prisma 7.10.1 ORM**，通过 `packages/db` 的 Repository 边界隔离，业务层不接触 ORM | 不需要 Docker、不需要数据库服务，Phase 1 可当天开工；交付物少一个运维组件。切换 PostgreSQL 的触发条件：单文件 > 10 GB **或** 落库延迟 > 1 s **或** 需要多实例部署 |
+| D2a | ORM 选型 | **已定**（2026-11-03 用户决策，v1.2 修订） | **Prisma 7.10.1**（不用 Drizzle） | Drizzle 是 SQL-like query builder，业务代码会出现 `db.select().from()` 这类近 SQL 表达，"不写方言 SQL"只能靠纪律维持。Prisma 的 Model API 把数据访问收敛成"对领域对象的操作"，配合 Repository 边界，业务层根本不接触 ORM——隔离是结构性的。Prisma 8 目前是 RC，API 不同，暂不采用 |
+| D2b | SQLite 驱动 | **已定**（2026-11-03 实施时确定） | **`@prisma/adapter-libsql` + `@libsql/client@^0.17.4`** | `better-sqlite3` 是原生模块，需 node-gyp 编译（Windows 上还要 MSBuild + ClangCL 工具集），会让 CI 与离线交付都变脆。`@libsql/client` 提供预编译二进制，装完即用、文件格式兼容、MIT 许可。**版本必须与 adapter 内置依赖对齐**：adapter 依赖 `^0.17.0`（caret 在 0.x 上锁定 minor），项目若声明 0.18.0 会装两份实例 |
+| D2c | email 大小写不敏感唯一 | **已定**（2026-11-03 用户决策） | 增加 `email_lower` 列 + 普通唯一索引 | Prisma 不支持表达式索引 `lower(email)`。多存一列（约 30 字节/用户）换走索引的大小写不敏感唯一 |
+| D2d | 枚举校验层 | **已定**（2026-11-03 用户决策） | API 边界 Zod 校验 | SQLite 无数据库级 CHECK 约束，枚举只在 Prisma Client 层生效。绕过 Prisma 写入的脏数据不会被数据库拦住——已知限制，见 §15.2 与 R19 |
 | D3 | 评论是否进 MVP | 默认进 | Phase 4 基础态（划词 + 线程 + 解决） | 影响 Phase 4 工期约 1 周 |
 | D4 | 账号来源 | 默认自建 | 平台自建账号（MVP）；预留 OIDC 接口位 | 若企业已有统一认证，MVP 后接入时需改登录页与用户表 |
 | D5 | 生产反向代理 | 默认 nginx | nginx（本文默认）；MVP 不要求容器化 | 影响部署脚本；compose 降级为可选产物 |
@@ -1069,6 +1134,23 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 5. **不承诺的边界要写清楚**。§11.2 明确列出的排除项（DOCX 导入导出、分页排版等）是范围声明，Issue 里反复出现同类请求时，模板会引导用户对照，避免维护者疲于解释。
 
 **维护模式**：单人维护。响应时间不承诺，但会尽力处理 Issue 与 PR。安全漏洞按 `SECURITY.md` 的目标时间处理。
+
+### 15.2 已知技术限制（Prisma 7 + SQLite）
+
+这些限制**已实测确认**，不是猜测。每条都有对应的应对措施，但限制本身存在——写在这里是为了让后续开发者知道边界在哪，而不是等踩到。
+
+| # | 限制 | 影响 | 应对 |
+|---|---|---|---|
+| 1 | **Json 字段无数据库默认值** | Prisma 在 SQLite 上生成 `JSONB NOT NULL DEFAULT {}`，SQLite 不认 → 迁移直接失败（Prisma 官方 issue #26571，标记 Major） | Json 字段不用 `@default`；默认值在 Repository 层补齐。`audit_events.metadata` 每次写入显式传值 |
+| 2 | **枚举无数据库级 CHECK 约束** | 绕过 Prisma 直接写库的脏枚举值不会被数据库拦住 | Prisma Client 层校验 + API 边界 Zod 兜底；见 R19 |
+| 3 | **不支持部分索引** | 回收站查询的索引体积比理想值大 20 倍 | 已在迁移 SQL 中手工补入 `nodes_trash_idx`（带实测数据注释）；`db:verify` 每次校验其存在；见 §7.3 |
+| 4 | **不支持表达式索引** | 无法直接建 `lower(email)` 唯一索引 | 改用 `email_lower` 列 + 普通唯一索引，见 §7.3 |
+| 5 | **BigInt 无法自增** | `BigInt @default(autoincrement())` 插入报 `NullConstraintViolation` | 自增主键一律用 `Int`（仅 `audit_events.id` 一处） |
+| 6 | **Windows 路径格式敏感** | `file:///C:/...`（三斜杠）被 schema engine 拒绝，报 os error 161 | 统一用 `file:C:/...`（两斜杠），见 `packages/db/scripts/migrate.ts` 的 `toDatabaseUrl()` |
+| 7 | **schema engine 无法在系统临时目录建库** | `%LOCALAPPDATA%\Temp` 下报 os error 161 | 校验库放在仓库的 `data/` 下，不用系统临时目录 |
+| 8 | **Prisma 8 未采用** | Prisma 8 是 RC，API 与 7 不同（TypeScript schema、图迁移、查询 DSL 重写） | 锁 `prisma@^7.10.1`；升级走单独 PR，需重跑 PoC |
+
+**已知限制的共同点**：它们都源于"Prisma 的抽象层比 SQLite 的能力更强"。切换到 PostgreSQL 时，限制 1、2、3、4 全部消失（PG 支持 jsonb 默认值、enum 类型、GIN 索引、表达式索引）。这也是切换 PostgreSQL 的额外收益，不只是容量与并发。
 
 ---
 
@@ -1120,17 +1202,21 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 
 ---
 
-## 16. 评审记录（v1.0 → v1.1）
+## 16. 评审记录（v1.0 → v1.2）
 
-**评审日期**：2026-11-03　**结论**：v1.0 的架构方向成立，予以确认；同时修订 19 处缺陷、3 项决策（其中 2 项由本文档作者拍板但记录在此）。
+**评审日期**：2026-11-03　**结论**：v1.0 的架构方向成立，予以确认；同时修订 19 处缺陷、5 项决策（其中 2 项由本文档作者拍板但记录在此）。v1.2 完成 ORM 从 Drizzle 到 Prisma 的基础设施替换（用户决策，见 §16.5）。
 
 ### 16.1 决策变更
 
-| # | v1.0 | v1.1 | 触发原因 |
+| # | v1.0 | v1.1/v1.2 | 触发原因 |
 |---|---|---|---|
-| D1 | Ant Design Vue 4（待确认） | **Reka UI 2.x + UnoCSS + TypeScript** | 用户决策。headless 组件不绑定数据层，与"ORM 方言隔离"的思路一致；代价是目录树/表格需自研（R18） |
-| D2 | Docker Desktop / PG 便携版（待确认） | **SQLite 单文件 + Drizzle ORM 多方言** | 用户决策。私有化交付场景下"少一个要运维的服务"价值更高；通过 `packages/db` 三层隔离保留切换 PostgreSQL 的路径 |
-| — | PostgreSQL 16+ 为唯一数据库 | 新增不变式 **I7 方言不可上浮**，Phase 1 验收第 9 条用 CI 强制 | D2 变更的配套约束。若不设此约束，方言隔离会在半年内失效 |
+| D1 | Ant Design Vue 4（待确认） | **Reka UI 2.x + UnoCSS + TypeScript** | 用户决策。headless 组件不绑定数据层，与"ORM 隔离"的思路一致；代价是目录树/表格需自研（R18） |
+| D2 | Docker Desktop / PG 便携版（待确认） | **SQLite 单文件 + Prisma 7.10.1 ORM**，通过 `packages/db` 的 Repository 边界隔离 | 用户决策。私有化交付场景下"少一个要运维的服务"价值更高；通过 Repository 边界保留切换 PostgreSQL 的路径 |
+| D2a | — | **ORM 由 Drizzle 改为 Prisma** | 用户决策。Drizzle 是 SQL-like query builder，业务代码会出现近 SQL 表达，"不写方言 SQL"只能靠纪律维持；Prisma 的 Model API 让业务层根本不接触 ORM，隔离是结构性的 |
+| D2b | — | **`@prisma/adapter-libsql` + `@libsql/client@^0.17.4`** | 版本必须与 adapter 内置依赖对齐（caret 在 0.x 上锁定 minor），否则装两份实例 |
+| D2c | — | **email 大小写唯一用 `email_lower` 列** | Prisma 不支持表达式索引 |
+| D2d | — | **枚举校验：API 边界 Zod** | SQLite 无数据库级 CHECK 约束（见 §15.2） |
+| — | PostgreSQL 16+ 为唯一数据库 | 新增不变式 **I7**，Phase 1 验收第 9 条用 CI 强制 | D2 变更的配套约束。若不设此约束，隔离会在半年内失效 |
 | D6 | （v1.0 未涉及） | **按开源规范建仓**：Apache-2.0 许可证，GitHub 仓库 `Ha1fice/weShare`，配齐 README / CONTRIBUTING / CoC / SECURITY / Issue 与 PR 模板 / CI / Dependabot。**仓库可见性为私有，工程标准为开源** | 用户明确"目标是做一个开源的项目"。许可证选 Apache-2.0：含专利授权，且与依赖中 Apache-2.0 的一侧一致，便于做单一许可证声明（见 §15.1） |
 
 ### 16.2 已修复的缺陷
@@ -1165,13 +1251,38 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 - §10 目录结构调整：新增 `packages/db`，`apps/api/src/db` 降为仓储调用
 - §13 新增风险 R13–R18
 - **§15.1 开源与治理**：许可证、治理文件清单、开源带来的 5 条额外约束
-- **§4.2 I7**：架构不变式从 6 条增至 7 条（新增方言不可上浮）
+- **§4.2 I7**：架构不变式从 6 条增至 7 条（v1.2 改写为数据访问唯一出口）
 
 ### 16.4 未采纳的建议
 
 - **把 `node_acl` 拆成独立的 allow/deny 两张表**：单表加 `effect` 列已足够，拆表会让唯一约束与查询复杂度上升。
 - **把内容镜像与 Y.Doc 拆成两张表**：两者一对一且共享生命周期，拆表只增加连接开销。
 - **首屏快照作为离线兜底渲染**：已明确 `content_json` 只能用于协同连接建立前的骨架占位，不作为内容源（§3.3 A）。
+
+### 16.5 ORM 替换记录（Drizzle → Prisma，v1.2）
+
+**替换时机**：Phase 1 的 T0（工程骨架）完成、T1 尚未开始业务实现时——Repository 层还没写，业务代码零依赖，是成本最低的窗口。
+
+**影响面**：Drizzle 引用完全封装在 `packages/db` 内（8 个文件），业务层 `grep "@weshare/db"` 零命中。替换只重写了 `packages/db` 一个包 + 一个护栏 + 文档。
+
+**替换中发现并处理的实际问题**：
+
+| # | 问题 | 处置 |
+|---|---|---|
+| 1 | SQLite 下 `Json @default("{}")` 生成非法 SQL | 去掉默认值，应用层补齐（Prisma 官方 issue #26571） |
+| 2 | `BigInt @default(autoincrement())` 在 SQLite 上自增失效 | 改 `Int`；仅 `audit_events.id` 一处 |
+| 3 | 枚举无数据库级 CHECK 约束 | 记录为已知限制（R19），API 边界 Zod 兜底 |
+| 4 | 必填关系的 `onDelete` 默认变 RESTRICT | 每条 relation 显式声明 |
+| 5 | Prisma 不支持部分索引 | 用 EXPLAIN QUERY PLAN 实测证明体积差 20 倍，保留在迁移 SQL 中（§7.3） |
+| 6 | Prisma 不支持表达式索引 | `users` 加 `email_lower` 列 |
+| 7 | `file:///C:/...`（三斜杠）被 schema engine 拒绝 | 统一 `file:C:/...`（两斜杠） |
+| 8 | schema engine 无法在系统临时目录建库 | 校验库放仓库 `data/` 下 |
+| 9 | `@prisma/client` 版本与 adapter 内置的 `@libsql/client` 不对齐会装两份 | 项目锁 `^0.17.4`，与 adapter 一致 |
+| 10 | `PrismaClient` 构造不能传 `schema` 选项（那是 Prisma 6 的写法） | Prisma 7 用 `prisma-client` generator，自动内置模型 |
+| 11 | `Uint8Array` 泛型不兼容（Prisma 的 Bytes 是 `Uint8Array<ArrayBuffer>`） | 领域层用宽松类型，实现层 `toBytes()` 窄化 |
+| 12 | `update` 的 checked/unchecked 变体歧义 | 显式标注 `DocumentContentUncheckedUpdateInput` |
+
+**未改动的部分**：`apps/*` 全部业务代码、`packages/{shared,authz,doc-schema}`、CI workflow 结构、§12 验收标准、§14 任务清单。
 
 ---
 
@@ -1231,8 +1342,8 @@ node scripts/verify.mjs --list           # 列出所有步骤
 
 | 不变式 | 机械化方式 | 脚本 |
 |---|---|---|
-| I7 方言不可上浮 | 扫描 `packages/db` 之外的方言标识（`sqlite`/`jsonb`/`timestamptz`/`bytea`/`pg_trgm`/`gen_random_uuid`/`now()`） | `check-dialect-isolation.mjs` |
-| 禁止手写 DDL | 表结构只能来自 `drizzle-kit` 生成的迁移 | `check-repo-layout.mjs` |
+| I7 数据访问唯一出口 | 扫描业务层是否 import 了 Prisma Client / 驱动 / `packages/db` 内部路径 | `check-data-access-leak.mjs` |
+| 禁止手写 DDL | 表结构只能来自 `prisma migrate` 生成的迁移 | `check-repo-layout.mjs` |
 | 文档数字不得腐烂 | 文档里的"N 条"必须等于现算值；`§X.Y` 引用必须指向存在的章节 | `check-doc-numbers.mjs` |
 | 测试不得静默不跑 | 磁盘上的测试文件必须被 `test` 脚本覆盖（或改用 glob） | `check-test-manifest.mjs` |
 

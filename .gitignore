@@ -44,3 +44,6 @@ offline/
 *.tsbuildinfo
 .eslintcache
 vite.config.ts.timestamp-*
+
+# ---- Prisma 生成的 Client（由 prisma generate 产出，不入库）----
+packages/db/generated/

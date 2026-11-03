@@ -1,0 +1,272 @@
+// 数据模型定义 —— 架构文档 §7.2
+//
+// 唯一真源。迁移由 `prisma migrate dev` 生成、`prisma migrate deploy` 应用。
+// 禁止手写 DDL（架构文档不变式 I7）。
+//
+// ⚠️ SQLite 适配说明（Prisma 7 + libSQL 的已知限制）：
+//
+// 1. Json 字段不能用 @default。Prisma 在 SQLite 上会生成
+//    `JSONB NOT NULL DEFAULT {}`，而 SQLite 不认 JSONB 类型也不认 `{}` 默认值，
+//    会报 `unrecognized token: "{"`（Prisma 官方 issue #26571）。
+//    → JSON 字段的默认值在应用层（Repository）补齐。
+//
+// 2. 枚举在 SQLite 上生成为 TEXT，不产生数据库级 CHECK 约束。
+//    → 枚举值由 Prisma Client 层校验，API 边界另用 Zod 兜底。
+//
+// 3. Prisma 不支持部分索引与表达式索引。
+//    → 两个必要的定制索引在迁移 SQL 中手工补入，见 prisma/migrations/。
+//      - nodes_trash_idx：部分索引（实测体积差 20 倍，见 §7.3）
+//      - users_email_lower_uq：表达式索引 → 改为 emailLower 列 + 普通复合唯一索引
+//
+// 4. 主键自增必须用 Int。BigInt @default(autoincrement()) 在 SQLite 上
+//    生成 `BIGINT NOT NULL PRIMARY KEY`，而 SQLite 的 rowid 自增要求
+//    `INTEGER PRIMARY KEY`，会导致插入失败（NullConstraintViolation）。
+//    → audit_events.id 用 Int。
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ---------------------------------------------------------------- 用户与会话
+
+model User {
+  id           String    @id
+  email        String
+  /// 小写归一化邮箱。唯一约束建在它上面——
+  /// Prisma 不支持表达式索引（lower(email)），故用独立列实现（架构文档 §7.2）。
+  emailLower   String    @unique @map("email_lower")
+  passwordHash String    @map("password_hash")
+  displayName  String    @map("display_name")
+  avatarKey    String?   @map("avatar_key")
+  status       String    @default("active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+
+  sessions       Session[]
+  ownedSpaces    Workspace[]
+  memberships    WorkspaceMember[]
+  ownedNodes     Node[]           @relation("NodeOwner")
+  deletedNodes   Node[]           @relation("NodeDeletedBy")
+  aclEntries     NodeAcl[]        @relation("AclCreator")
+  versions       NodeVersion[]    @relation("VersionCreator")
+  attachments    Attachment[]     @relation("AttachmentUploader")
+  updatedDocs    DocumentContent[] @relation("ContentUpdatedBy")
+  auditEvents    AuditEvent[]     @relation("AuditActor")
+
+  @@map("users")
+}
+
+model Session {
+  id         String    @id
+  userId     String    @map("user_id")
+  /// sha256(随机 32 字节 token)。明文 token 不落库。
+  tokenHash  Bytes     @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  userAgent  String?   @map("user_agent")
+  ip         String?
+  revokedAt  DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+// ---------------------------------------------------------------- 空间与成员
+
+model Workspace {
+  id          String    @id
+  name        String
+  ownerId     String    @map("owner_id")
+  defaultRole String    @default("edit") @map("default_role")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  owner       User              @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  members     WorkspaceMember[]
+  nodes       Node[]
+  attachments Attachment[]
+  auditEvents AuditEvent[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  workspaceId String   @map("workspace_id")
+  userId      String   @map("user_id")
+  role        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+// ---------------------------------------------------------------- 目录树与元数据
+
+model Node {
+  id          String    @id
+  workspaceId String    @map("workspace_id")
+  /// 自引用 + 级联：彻底删除父节点时子节点一并删除（架构文档 §7.2 变更 2）
+  parentId    String?   @map("parent_id")
+  type        String
+  title       String    @default("")
+  /// 小写去空白标题，仅用于检索
+  titleNorm   String    @default("") @map("title_norm")
+  ownerId     String    @map("owner_id")
+  visibility  String    @default("workspace")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  deletedBy   String?   @map("deleted_by")
+  /// 一次删除批次的根，便于整批还原
+  trashRootId String?   @map("trash_root_id")
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent      Node?     @relation("NodeTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Node[]    @relation("NodeTree")
+  owner       User      @relation("NodeOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  deletedByUser User?   @relation("NodeDeletedBy", fields: [deletedBy], references: [id], onDelete: SetNull)
+  trashRoot   Node?     @relation("NodeTrash", fields: [trashRootId], references: [id], onDelete: SetNull)
+  inTrash     Node[]    @relation("NodeTrash")
+  content     DocumentContent?
+  acl         NodeAcl[]
+  versions    NodeVersion[]
+  attachments Attachment[]
+
+  @@index([workspaceId, parentId, deletedAt, sortOrder])
+  @@index([titleNorm])
+  @@map("nodes")
+}
+
+// ---------------------------------------------------------------- 正文
+
+model DocumentContent {
+  nodeId               String    @id @map("node_id")
+  contentSchemaVersion Int       @default(1) @map("content_schema_version")
+  yjsSchemaVersion     Int       @default(1) @map("yjs_schema_version")
+  /// 只读镜像，新建时为初始空文档
+  contentJson          Json?     @map("content_json")
+  /// 协同事实源（Uint8Array）
+  yjsState             Bytes?    @map("yjs_state")
+  stateVector          Bytes?    @map("state_vector")
+  docSizeBytes         Int       @default(0) @map("doc_size_bytes")
+  /// 单机保存模式乐观锁
+  revision             Int       @default(0)
+  textPreview          String?   @map("text_preview")
+  charCount            Int       @default(0) @map("char_count")
+  updatedBy            String?   @map("updated_by")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  storedAt             DateTime? @map("stored_at")
+
+  node          Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  updatedByUser User? @relation("ContentUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+
+  @@map("document_contents")
+}
+
+// ---------------------------------------------------------------- 显式授权
+
+model NodeAcl {
+  id          String   @id
+  nodeId      String   @map("node_id")
+  subjectType String   @map("subject_type")
+  /// subjectType=workspace 时为 workspace_id（全员）
+  subjectId   String   @map("subject_id")
+  role        String
+  /// allow=授予，deny=降权。deny 优先于 allow（架构文档 §7.2 变更 1）
+  effect      String   @default("allow")
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  node    Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  creator User @relation("AclCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@unique([nodeId, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+  @@map("node_acl")
+}
+
+// ---------------------------------------------------------------- 版本快照
+
+model NodeVersion {
+  id                   String   @id
+  nodeId               String   @map("node_id")
+  versionNo            Int      @map("version_no")
+  kind                 String
+  label                String?
+  contentSchemaVersion Int      @default(1) @map("content_schema_version")
+  yjsSchemaVersion     Int      @default(1) @map("yjs_schema_version")
+  contentJson          Json     @map("content_json")
+  yjsState             Bytes?   @map("yjs_state")
+  createdBy            String?  @map("created_by")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  node    Node  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  creator User? @relation("VersionCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@unique([nodeId, versionNo])
+  @@index([nodeId, versionNo])
+  @@map("node_versions")
+}
+
+// ---------------------------------------------------------------- 附件
+
+model Attachment {
+  id           String   @id
+  workspaceId  String   @map("workspace_id")
+  /// 文档删除后附件保留待清理
+  nodeId       String?  @map("node_id")
+  uploaderId   String   @map("uploader_id")
+  originalName String   @map("original_name")
+  /// 服务端嗅探结果，不取客户端声明
+  mimeType     String   @map("mime_type")
+  byteSize     Int      @map("byte_size")
+  sha256       String
+  storageKey   String   @unique @map("storage_key")
+  width        Int?
+  height       Int?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  node      Node?     @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  uploader  User      @relation("AttachmentUploader", fields: [uploaderId], references: [id], onDelete: Restrict)
+
+  @@index([nodeId])
+  @@map("attachments")
+}
+
+// ---------------------------------------------------------------- 审计
+
+model AuditEvent {
+  /// 自增主键必须是 Int——BigInt 在 SQLite 上无法自增（见文件头说明 4）
+  id          Int       @id @default(autoincrement())
+  workspaceId String   @map("workspace_id")
+  actorId     String?  @map("actor_id")
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String?  @map("target_id")
+  /// 无数据库默认值（SQLite 限制 1），由应用层补 {}
+  metadata    Json     @map("metadata")
+  ip          String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor     User?     @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@map("audit_events")
+}

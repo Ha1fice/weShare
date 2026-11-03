@@ -74,17 +74,63 @@ pnpm format         # Prettier 格式化
 pnpm verify         # 快速层验证（仓库规范 + 护栏 + typecheck/lint/test）
 pnpm verify:full    # 完整验证（含数据库迁移校验等重门禁）
 
+pnpm db:generate    # 生成 Prisma Client（改 schema 后必须执行）
 pnpm db:migrate     # 执行数据库迁移（可重复执行）
 pnpm db:seed        # 写入示例数据
-pnpm db:verify      # 迁移校验（空库执行得完整结构、二次执行无副作用）
+pnpm db:verify      # 迁移校验（空库执行得完整结构、二次执行无副作用、结构逐项对照）
 ```
+
+## 修改数据模型
+
+表结构的唯一来源是 `packages/db/prisma/schema.prisma`。改完 schema 后：
+
+```bash
+# 1. 生成并应用迁移（开发环境）
+cd packages/db
+pnpm exec prisma migrate dev --name <变更名>
+
+# 2. 重新生成 Client
+cd ../..
+pnpm db:generate
+
+# 3. 校验结构一致性（对照基准在 packages/db/scripts/verify-structure.ts）
+pnpm db:verify
+```
+
+迁移 SQL 检入 `packages/db/prisma/migrations/`，**禁止手写 DDL**。
+
+Prisma 在 SQLite 上无法表达**部分索引**与**表达式索引**。本项目用到的两个定制索引（回收站部分索引、邮件大小写唯一）处理方式见架构文档 §7.3——新增定制索引时，必须同步更新 `verify-structure.ts` 的期望结构，否则 `db:verify` 不会发现它的缺失。
 
 ## 常见问题
 
-### `better-sqlite3` 编译失败
+### Prisma Client 未生成
 
-**本项目已不使用 better-sqlite3**，改用 `@libsql/client`（预编译二进制，装完即用）。
-若在旧分支上遇到 node-gyp 编译错误，检查是否需要 MSBuild + ClangCL 工具集。
+报 `@prisma/client did not initialize yet. Please run prisma generate` 时：
+
+```bash
+pnpm db:generate
+```
+
+### 数据库被占用 / `SQLITE_BUSY`
+
+SQLite 是单写者模型。检查是否有残留进程占用 `data/weshare.db`：
+
+```bash
+# Windows
+tasklist | findstr node
+```
+
+正常情况下 WAL 模式 + `busy_timeout=5000` 会自动等待重试。
+
+### 迁移报 os error 161「指定的路径无效」
+
+Prisma 的 schema engine 在 Windows 上要求 `file:C:/path/db`（**两斜杠**）。三斜杠形式 `file:///C:/path/db` 会被拒绝。路径转换统一在 `packages/db/scripts/migrate.ts` 的 `toDatabaseUrl()` 里，不要手写 URL。
+
+同时注意：schema engine 无法在系统临时目录（`%LOCALAPPDATA%\Temp`）下创建 SQLite 文件，校验库要放在仓库的 `data/` 下。
+
+### 枚举值不被数据库拦截
+
+SQLite 没有数据库级的 CHECK 约束，枚举只在 Prisma Client 层校验。绕过 Prisma 直接写库能写入非法枚举值。API 边界另用 Zod 校验兜底（架构文档 §15.2）。
 
 ### 数据库锁住 / `SQLITE_BUSY`
 
