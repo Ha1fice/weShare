@@ -1,11 +1,11 @@
 # 项目总体架构与 MVP 实施方案
 
 > 文档性质：Phase 0 交付物，指导 Phase 1–5 的实施基线  
-> 版本：v1.1（2026-11-03）  
-> 状态：**已确认**（v1.0 经评审后修订；变更清单与关闭的问题见 §16）  
+> 版本：v1.2（2026-11-03）  
+> 状态：**已确认**（v1.0 经评审后修订为 v1.1；v1.2 补开源与治理，变更清单见 §16）  
 > 适用范围：整个平台（平台层 / 文档编辑器 / 表格编辑器 / 协同服务 / 数据层）  
 > 上位依据：`项目总指导`（产品方向与优先级）＞ 本文 ＞ 三份技术调研报告  
-> 已决事项：数据库 = SQLite 优先 + Drizzle ORM 多方言（§15-D2）；前端 UI = Reka UI + UnoCSS（§15-D1）
+> 已决事项：数据库 = SQLite 优先 + Drizzle ORM 多方言（§15-D2）；前端 UI = Reka UI + UnoCSS（§15-D1）；开源发布 = Apache-2.0 + GitHub（§15-D6）
 
 本文不重复介绍 Tiptap、Yjs、Univer 的基本概念。三份调研报告已经覆盖了组件能力与许可证事实；本文只回答一个问题：**如何把它们组合成一个可交付、可验收、可持续演进的产品**。
 
@@ -19,7 +19,7 @@
 4. **内容事实源**：正文以 Y.Doc 为唯一事实源，ProseMirror JSON 是**只读物化结果**（供列表摘要、搜索、导出、版本对比）。业务元数据（标题/归属/创建者/权限/时间）独立存 `nodes` 表，正文存 `document_contents` 表。
 5. **权限形态**：服务端会话 Cookie + 服务端角色判定；WebSocket 握手复用同一 Cookie，`onAuthenticate` 判定并设置 `connection.readOnly`，**只读由服务端强制**，前端隐藏按钮只作体验优化。
 6. **自动保存形态**：Phase 2 用带 revision 乐观锁的 REST 保存；Phase 3 起切换为协同落库，REST 内容写入对已启用协同的文档返回 `409`，**同一文档永不并存两条写入路径**。
-7. **现状**：仓库为空（仅 `.agents` 调研文档与 `.screenshots`）；本机 Node v24.17.0 / pnpm 9.14.4 已可用，无 Docker、无 PostgreSQL——**这三项都不再是阻塞项**（改用 SQLite 后不需要数据库服务）。Phase 1 的第一件事是打通工程骨架，而不是写业务代码。
+7. **现状**：架构已确认、仓库已建（git + GitHub，含开源规范文件），但**尚无业务代码**；本机 Node v24.17.0 / pnpm 9.14.4 已可用，无 Docker、无 PostgreSQL——**这三项都不再是阻塞项**（改用 SQLite 后不需要数据库服务）。Phase 1 的第一件事是打通工程骨架，而不是写业务代码。
 
 ---
 
@@ -56,11 +56,14 @@
 
 ### 2.1 仓库现状（实测）
 
-- 工作区 `D:\origin\code\weShare` 仅有 `.agents/`（3 份调研报告 + 1 份 agent 规范）与 `.screenshots/`（工具临时目录）。
-- **不是 git 仓库**（`git status` 报 `not a git repository`）。
-- **没有任何前后端代码、没有 `package.json`、没有数据库脚本、没有部署文件**。
+- 工作区 `D:\origin\code\weShare` 初始仅有 `.agents/`（3 份调研报告 + 1 份模型说明）与 `.screenshots/`（工具临时目录）。
+- **已初始化 git 仓库**（分支 `main`），首次提交为"初始化仓库与架构基线 v1.1"。
+- **仍然没有任何前后端代码、没有 `package.json`、没有数据库脚本**——工程骨架是 Phase 1 T0 的交付物。
+- 已按开源项目规范配齐：`README.md`、`LICENSE`（Apache-2.0）、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、Issue/PR 模板、CI（`.github/workflows/ci.yml`）、Dependabot。
 
-结论：这是绿地项目。所谓"沿用现有技术栈"没有对象，技术栈需要在本文中**显式决策并记录理由**（§3、§15）；Phase 1 必须补上 git 初始化与首版工程骨架。
+结论：这是绿地项目。"沿用现有技术栈"没有对象，技术栈在本文中**显式决策并记录理由**（§3、§15）；Phase 1 必须补上首版工程骨架。
+
+**开源属性与"私有化部署"的关系**：本项目以 Apache-2.0 开源，但目标场景仍是企业内部私有化部署。开源指的是**代码可读、可改、可自建**；"私有化部署"指的是**部署形态**（不依赖公有云 SaaS）。两者不冲突——这正是把 SQLite 单文件作为默认形态的价值：自建者不需要先学会运维一个数据库服务。
 
 ### 2.2 运行环境实测
 
@@ -965,10 +968,11 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 
 **T0 环境与工程骨架**
 - T0.1 固化工具链：根 `package.json` 写 `"packageManager": "pnpm@9.14.4"`，`engines.node` 声明 `>=22`；写 `docs/dev-setup.md`（Node + pnpm + 一条命令起 SQLite，无 Docker、无数据库服务）。判据：全新机器按文档走完，`pnpm -r typecheck` 全绿。
-- T0.2 `git init` + `.gitignore`（含 `.env`、`node_modules`、`data/`、`uploads/`、`dist`）+ 首个 commit。
+- T0.2 ~~`git init` + `.gitignore` + 首个 commit~~ **已完成**（2026-11-03：仓库已建于 GitHub，开源规范文件已配齐，`.gitignore` / `.gitattributes` 已就位）。
 - T0.3 pnpm workspace 骨架：`apps/web`、`apps/api`、`apps/collab`、`packages/{shared,doc-schema,authz,db}`；根 `tsconfig.base.json`；统一 `lint`/`typecheck`/`test` 脚本。判据：`pnpm -r typecheck` 全绿。
 - T0.4 `apps/api` 骨架：Fastify 装配、zod 配置、pino 日志、统一错误响应体、`/healthz`。判据：`curl /healthz` 返回 `{ok:true}`。
 - T0.5 `apps/web` 骨架：Vite + Vue 3 + Router + Pinia + UnoCSS + Reka UI；`/healthz` 联调。判据：页面能显示后端健康状态。
+- T0.6 启用 CI 的 `code-checks` job：提交根 `package.json` 后把 `.github/workflows/ci.yml` 中该 job 的 `if: false` 去掉。判据：CI 在 PR 上跑出 typecheck / lint / test 结果。
 
 **T1 数据库**
 - T1.1 `packages/db/src/schema/schema.sqlite.ts` 定义 §7.2 全部表（含 `node_acl.effect`、`content_schema_version` / `yjs_schema_version` 拆分、`parent_id` 级联删除）。
@@ -1018,8 +1022,40 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 | D3 | 评论是否进 MVP | 默认进 | Phase 4 基础态（划词 + 线程 + 解决） | 影响 Phase 4 工期约 1 周 |
 | D4 | 账号来源 | 默认自建 | 平台自建账号（MVP）；预留 OIDC 接口位 | 若企业已有统一认证，MVP 后接入时需改登录页与用户表 |
 | D5 | 生产反向代理 | 默认 nginx | nginx（本文默认）；MVP 不要求容器化 | 影响部署脚本；compose 降级为可选产物 |
+| D6 | 开源与许可证 | **已定** | **Apache-2.0**，仓库公开托管于 GitHub | 见 §15.1。选 Apache-2.0 而非 MIT：含专利授权，且与依赖中 Apache-2.0 的一侧一致，便于做单一许可证声明 |
 
 **D2 的方言扩展承诺（必须兑现）**：`packages/db` 提供 `schema.sqlite.ts` 与预留的 `schema.pg.ts` 两套定义，`repo/` 层方法签名完全一致。切换 PostgreSQL 的工作量上限是"新增一个 schema 文件 + 一个 driver 文件 + 重跑迁移"，**不允许波及业务代码**。这条承诺由 Phase 1 验收第 9 条（方言标识扫描）强制。
+
+### 15.1 开源与治理
+
+**项目性质**：本项目以 **Apache-2.0** 许可证开源，仓库公开托管于 GitHub。目标是让企业能够自行部署、修改、审计这套文档平台，而不是只作为闭源 SaaS 提供。
+
+**"开源"与"私有化部署"不冲突**：开源指代码可读、可改、可自建；私有化部署指交付形态不依赖公有云服务。这正是选 SQLite 单文件作为默认形态的价值——自建者不必先学会运维一个数据库服务。
+
+**已就位的开源规范**
+
+| 文件 | 作用 |
+|---|---|
+| `LICENSE` | Apache-2.0 全文（自官网取权威原文，非手写） |
+| `README.md` | 项目定位、边界、当前状态、技术栈、参与方式 |
+| `CONTRIBUTING.md` | 分支模型、提交规范、PR 要求、RFC 流程 |
+| `CODE_OF_CONDUCT.md` | Contributor Covenant v2.1（自官网取权威原文） |
+| `SECURITY.md` | 漏洞报告渠道、响应时限、什么不算漏洞 |
+| `.github/ISSUE_TEMPLATE/` | Bug / 功能请求模板（含"是否越界"自查项） |
+| `.github/PULL_REQUEST_TEMPLATE.md` | PR 自查清单（影响面勾选项对应 §4.2 不变式） |
+| `.github/workflows/ci.yml` | 仓库规范检查 + 代码检查（方言隔离、许可证门禁） |
+| `.github/dependabot.yml` | 依赖与 Actions 自动更新 |
+| `.editorconfig` / `.gitattributes` | 跨编辑器、跨平台的一致性 |
+
+**开源带来的额外约束**（进入实现阶段后必须遵守）：
+
+1. **不引入 GPL / AGPL 依赖**。CI 门禁强制。本项目依赖树已是全 MIT / Apache-2.0，保持这个状态是刻意选择。
+2. **架构不变式对贡献者同样生效**。§4.2 的约束通过 CI 检查与 PR 模板强制，不依赖"老人都知道"。
+3. **安全漏洞走私密渠道**（GitHub Security Advisories），不走公开 Issue。
+4. **API 与数据结构变更需要文档先行**，避免贡献者只改代码不改文档造成文档与实现漂移。
+5. **不承诺的边界要写清楚**。§11.2 明确列出的排除项（DOCX 导入导出、分页排版等）是范围声明，Issue 里反复出现同类请求时，模板会引导用户对照，避免维护者疲于解释。
+
+**维护模式**：单人维护。响应时间不承诺，但会尽力处理 Issue 与 PR。安全漏洞按 `SECURITY.md` 的目标时间处理。
 
 ---
 
@@ -1082,6 +1118,7 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 | D1 | Ant Design Vue 4（待确认） | **Reka UI 2.x + UnoCSS + TypeScript** | 用户决策。headless 组件不绑定数据层，与"ORM 方言隔离"的思路一致；代价是目录树/表格需自研（R18） |
 | D2 | Docker Desktop / PG 便携版（待确认） | **SQLite 单文件 + Drizzle ORM 多方言** | 用户决策。私有化交付场景下"少一个要运维的服务"价值更高；通过 `packages/db` 三层隔离保留切换 PostgreSQL 的路径 |
 | — | PostgreSQL 16+ 为唯一数据库 | 新增不变式 **I7 方言不可上浮**，Phase 1 验收第 9 条用 CI 强制 | D2 变更的配套约束。若不设此约束，方言隔离会在半年内失效 |
+| D6 | （v1.0 未涉及） | **开源发布**：Apache-2.0，GitHub 公开仓库，配齐 README / CONTRIBUTING / CoC / SECURITY / Issue 与 PR 模板 / CI / Dependabot | 用户明确"目标是做一个开源的项目"。许可证选 Apache-2.0：含专利授权，且与依赖中 Apache-2.0 的一侧一致，便于做单一许可证声明（见 §15.1） |
 
 ### 16.2 已修复的缺陷
 
@@ -1114,6 +1151,8 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 - §7.2 SQLite 特有约束（`foreign_keys=ON`、WAL、`busy_timeout`、禁网络盘）
 - §10 目录结构调整：新增 `packages/db`，`apps/api/src/db` 降为仓储调用
 - §13 新增风险 R13–R18
+- **§15.1 开源与治理**：许可证、治理文件清单、开源带来的 5 条额外约束
+- **§4.2 I7**：架构不变式从 6 条增至 7 条（新增方言不可上浮）
 
 ### 16.4 未采纳的建议
 
@@ -1123,4 +1162,95 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 
 ---
 
-*本文为方案文档，未创建任何业务代码。v1.1 已确认，可从 §14 的 T0 开始实施。*
+## 17. 测试与 CI 策略
+
+> 本节记录 CI 自动化的**设计约束**，与 §4.2 的架构不变式同级——违反即视为缺陷。
+> 范本参考 gosslan 项目的 CI 实践，按 Node 栈裁剪。
+
+### 17.1 分层
+
+| 层 | 内容 | 耗时量级 | 何时跑 |
+|---|---|---|---|
+| **快速层** | 仓库规范、护栏、typecheck、lint、单元测试 | 秒级 | 每次提交 |
+| **重门禁层** | 数据库迁移校验、依赖许可证门禁、依赖安全审计 | 分钟级 | 每次 PR |
+
+分层不是为了省时间，是为了让"日常提交"能立刻拿到反馈，而"合入 main 前"必须跑完全部。**分层规则由 `scripts/verify.mjs` 自动校验**：看起来是重门禁却没标记 `heavy: true` 的步骤会当场报错——否则 `--fast` 会悄悄跳过本该快的检查。
+
+### 17.2 步骤表唯一真源
+
+所有门禁步骤只在 `scripts/verify.mjs` 的步骤表里定义一次，CI 只说"跑哪一组"。
+
+```
+node scripts/verify.mjs                  # 快速层全部组
+node scripts/verify.mjs --group repo     # 指定组
+node scripts/verify.mjs --full           # 含重门禁层
+node scripts/verify.mjs --list           # 列出所有步骤
+```
+
+**为什么必须单源**：历史上 CI 文件与本地脚本各抄一份步骤，改了一边忘了另一边，结果是"本地有这条门禁、CI 永远不跑"，而且**没有任何信号表明这件事发生了**。
+
+每个步骤必须声明 `group`，漏写会在加载时直接 `exit 1`。后果正是上面那种静默失效。
+
+### 17.3 零覆盖 ≠ 通过
+
+**受检范围为空时，退出码是 2，不是 0。**
+
+这是本项目 CI 最容易忽略的一种失败：门禁看起来绿了，实际上一条检查都没跑。典型成因是路径写错、正则失效、阈值过松。触发场景：Phase 1 工程骨架就位前，`apps/` 与 `packages/` 还不存在，方言隔离护栏扫的是空目录。
+
+因此：
+- 护栏退出码 `0` = 通过、`1` = 发现违规、`2` = 零覆盖（**不是通过**）；
+- `verify.mjs` 把退出码 2 单列为 ⚠️，既不计入通过也不计入失败；
+- 前置条件未就位的步骤用 `enabled()` 显式声明跳过，并在结尾**点名列出**，不静默省略。
+
+### 17.4 护栏非空转验证
+
+**每加一条守门测试，都必须证明它真的会失败。**
+
+做法（`scripts/guards/selfcheck.mjs`）：把仓库复制到临时目录 → 施加最小破坏 → 跑护栏 → 断言退出码非 0 → 恢复 → 再跑 → 断言退出码为 0 或 2。
+
+理由：一条永远通过的守门测试，比没有守门测试更危险——它给出"已检查"的假信号。路径写错、正则失效、被 try/catch 吞掉异常，这些 bug 都不会让 CI 变红，只会让它一直绿。
+
+这套机制在本次搭建中**当场抓出了 4 个真实缺陷**（护栏自身的路径解析、中文数字处理、注释里的 glob 破坏块注释、破坏用例正则不匹配）。
+
+### 17.5 机械化的架构不变式
+
+§4.2 的不变式不能只写在文档里等人自觉，必须有对应守卫：
+
+| 不变式 | 机械化方式 | 脚本 |
+|---|---|---|
+| I7 方言不可上浮 | 扫描 `packages/db` 之外的方言标识（`sqlite`/`jsonb`/`timestamptz`/`bytea`/`pg_trgm`/`gen_random_uuid`/`now()`） | `check-dialect-isolation.mjs` |
+| 禁止手写 DDL | 表结构只能来自 `drizzle-kit` 生成的迁移 | `check-repo-layout.mjs` |
+| 文档数字不得腐烂 | 文档里的"N 条"必须等于现算值；`§X.Y` 引用必须指向存在的章节 | `check-doc-numbers.mjs` |
+| 测试不得静默不跑 | 磁盘上的测试文件必须被 `test` 脚本覆盖（或改用 glob） | `check-test-manifest.mjs` |
+
+`check-doc-numbers.mjs` 的现算能力：不变式条数与编号连续性、各 Phase 验收条数、§16 表格行数、所有 `§X.Y` 交叉引用的有效性。它同时是一个双向检查——**文档改了数字要同步改内容，代码改了内容要同步改文档**。
+
+### 17.6 失败诊断走注解通道
+
+GitHub 的 job 日志页对匿名访问关闭（`actions/jobs/{id}/logs` API 匿名返回 403）。实测三条渠道里只有 **check-run 注解**可匿名读取。
+
+因此 `scripts/ci-run.sh` 把命令输出合成**一条多行注解**（GitHub 每 step 只保留约 10 条注解，逐行 emit 会让有用的行被 `... ok` 淹没），内容包含：退出码、输出行数、关键行（`✗`/`FAIL`/`AssertionError`/`expected` 等）、末尾 30 行。
+
+### 17.7 测试框架选型
+
+**Vitest**（不用 gosslan 的 `node --test` 路线）。
+
+理由：gosslan 是 Tauri + Rust，前端没有 DOM 测试地基，只能靠 CDP 真实浏览器探针；weShare 有 Vue 组件与编辑器逻辑，需要 `jsdom` 环境与组件测试能力，`node --test` 做不到。**这是 gosslan 范本最弱的一环，不照抄。**
+
+数据库测试：用 **SQLite 内存库**（`:memory:`），每测试独立实例 + 跑一遍迁移。不引入 testcontainers、不引入 Docker——与 §2.2 的环境决策一致。
+
+### 17.8 已知不做的
+
+gosslan 有而本项目**不需要**的：Rust 工具链全套（fmt/clippy/feature 门控/平台基线）、跨平台矩阵（macOS/Windows 双腿）、Android 交叉编译、WebView2 打包档。
+
+gosslan **没有**而本项目**需要自建**的：依赖安全审计、许可证门禁、ESLint/Prettier、CODEOWNERS、Dependabot（已配）、覆盖率阈值。
+
+覆盖率：**暂不设阈值**。理由是 Phase 1 尚无代码，过早设阈值只会催生为凑数字而写的测试。Phase 2 结束后视实际形态再定。
+
+### 17.9 行尾一致性不是风格问题
+
+`.gitattributes` 的 `* text=auto eol=lf` 强制 LF 入库。**Windows 上开发时 CRLF 会让护栏用 `"\n}\n"` 抠函数体的锚点失效，整批护栏静默退化**（断言永远为真）。CI 里有专门的行尾检查项兜底。
+
+---
+
+*本文为方案文档，未创建任何业务代码。v1.2 已确认，可从 §14 的 T0 开始实施。*

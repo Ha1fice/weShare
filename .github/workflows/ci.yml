@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支去重：push 用 ref_name、PR 用 head_ref，两者都能取到分支名。
+# cancel-in-progress 是"后者取消前者"的竞态——被取消的那次在 PR 上会显示
+# cancelled，若将来启用 branch protection（要求 PR 检查通过）会被判为不通过。
+# 届时应把 push 的触发去掉，只留 pull_request。
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ===================================================================
+  # 快速层：仓库规范与护栏。秒级，每次提交都跑。
+  # ===================================================================
+  repo-guards:
+    name: 仓库规范与护栏
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 仓库规范检查（文件齐全 / 忽略规则 / 行尾 / 无手写 DDL）
+        shell: bash
+        run: bash scripts/ci-run.sh "仓库布局" node scripts/guards/check-repo-layout.mjs
+
+      - name: 架构文档硬数字对账
+        shell: bash
+        run: bash scripts/ci-run.sh "文档对账" node scripts/guards/check-doc-numbers.mjs
+
+      - name: 护栏非空转自检
+        shell: bash
+        # 这条最慢（约 3s），但价值最高：证明每条护栏真的会失败
+        run: bash scripts/ci-run.sh "护栏自检" node scripts/guards/selfcheck.mjs
+
+      - name: 行尾一致性（不应有 CRLF 入库）
+        shell: bash
+        run: |
+          if git grep -Il $'\r' -- . ':!*.png' ':!*.jpg' ':!*.gif' ':!*.webp' | grep .; then
+            echo "::error::检测到 CRLF 行尾。Windows 上开发时护栏用 '\n}\n' 抠函数体的锚点会失效，检查 .gitattributes。"
+            exit 1
+          fi
+          echo "行尾一致"
+
+      - name: 未追踪的敏感文件
+        shell: bash
+        run: |
+          if git ls-files | grep -Ei '(^|/)(\.env$|\.env\..+|.*\.pem$|.*\.key$|id_rsa|.*\.p12$|.*\.pfx$)'; then
+            echo "::error::检测到疑似被追踪的敏感文件"
+            exit 1
+          fi
+          echo "无敏感文件被追踪"
+
+  # ===================================================================
+  # 代码层：Phase 1 工程骨架就位后启用。
+  #
+  # 步骤清单的唯一真源在 scripts/verify.mjs，这里只说"跑哪一组"。
+  # 历史上两边各抄一份步骤，改了一边忘了另一边，结果是"本地有这条门禁、
+  # CI 永远不跑"，而且没人发现。
+  # ===================================================================
+  code-checks:
+    name: 代码检查
+    if: false # ← Phase 1 提交根 package.json 后改为 `if: success()`
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.14.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 快速层验证（typecheck / lint / test）
+        shell: bash
+        run: bash scripts/ci-run.sh "verify 快速层" node scripts/verify.mjs --group code --fast
+
+      - name: 完整验证（含重门禁：数据库迁移校验）
+        shell: bash
+        run: bash scripts/ci-run.sh "verify 完整层" node scripts/verify.mjs --group code --full
+
+      - name: 依赖许可证门禁 —— GPL / AGPL 硬失败
+        shell: bash
+        run: |
+          pnpm licenses list --prod --json > /tmp/licenses.json || true
+          if grep -iE '"(AGPL|GPL|OSL|SSPL|EE)' /tmp/licenses.json; then
+            echo "::error::检测到 GPL / AGPL 类依赖，违反许可证门禁"
+            exit 1
+          fi
+          echo "许可证门禁通过"
+
+      - name: 依赖安全审计
+        shell: bash
+        run: |
+          pnpm audit --audit-level=high || {
+            echo "::error::存在 high 及以上级别的依赖漏洞"
+            exit 1
+          }
