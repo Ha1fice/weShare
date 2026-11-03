@@ -1047,6 +1047,14 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 | `.github/dependabot.yml` | 依赖与 Actions 自动更新 |
 | `.editorconfig` / `.gitattributes` | 跨编辑器、跨平台的一致性 |
 
+**仓库可见性（2026-11-03 决定）**：GitHub 仓库 `Ha1fice/weShare` 当前为**私有**，但**完整保留上述全部开源规范文件与 Apache-2.0 许可证**。
+
+这两件事不矛盾，分工明确：
+- **工程实践层**：私有。仓库不对外公开，避免在产品方向稳定前暴露半成品，也避免外部贡献者消耗维护带宽。
+- **工程标准层**：开源。协作方式按开源项目执行——改动走 PR 而非直推、变更走评审、漏洞走私密渠道、依赖自动更新、许可证门禁强制。这套标准与仓库是否公开无关，且让"将来转为公开"成为一个零成本开关，而不是一次需要补做的规范化改造。
+
+对内部开发者的实际影响与开源项目一致：任何改动走 PR 并被 CI 门禁检查，架构不变式由机器强制而非口头约定。
+
 **开源带来的额外约束**（进入实现阶段后必须遵守）：
 
 1. **不引入 GPL / AGPL 依赖**。CI 门禁强制。本项目依赖树已是全 MIT / Apache-2.0，保持这个状态是刻意选择。
@@ -1118,7 +1126,7 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 | D1 | Ant Design Vue 4（待确认） | **Reka UI 2.x + UnoCSS + TypeScript** | 用户决策。headless 组件不绑定数据层，与"ORM 方言隔离"的思路一致；代价是目录树/表格需自研（R18） |
 | D2 | Docker Desktop / PG 便携版（待确认） | **SQLite 单文件 + Drizzle ORM 多方言** | 用户决策。私有化交付场景下"少一个要运维的服务"价值更高；通过 `packages/db` 三层隔离保留切换 PostgreSQL 的路径 |
 | — | PostgreSQL 16+ 为唯一数据库 | 新增不变式 **I7 方言不可上浮**，Phase 1 验收第 9 条用 CI 强制 | D2 变更的配套约束。若不设此约束，方言隔离会在半年内失效 |
-| D6 | （v1.0 未涉及） | **开源发布**：Apache-2.0，GitHub 公开仓库，配齐 README / CONTRIBUTING / CoC / SECURITY / Issue 与 PR 模板 / CI / Dependabot | 用户明确"目标是做一个开源的项目"。许可证选 Apache-2.0：含专利授权，且与依赖中 Apache-2.0 的一侧一致，便于做单一许可证声明（见 §15.1） |
+| D6 | （v1.0 未涉及） | **按开源规范建仓**：Apache-2.0 许可证，GitHub 仓库 `Ha1fice/weShare`，配齐 README / CONTRIBUTING / CoC / SECURITY / Issue 与 PR 模板 / CI / Dependabot。**仓库可见性为私有，工程标准为开源** | 用户明确"目标是做一个开源的项目"。许可证选 Apache-2.0：含专利授权，且与依赖中 Apache-2.0 的一侧一致，便于做单一许可证声明（见 §15.1） |
 
 ### 16.2 已修复的缺陷
 
