@@ -1,0 +1,41 @@
+# ---- 依赖 ----
+node_modules/
+.pnpm-store/
+
+# ---- 构建产物 ----
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# ---- 环境变量 ----
+.env
+.env.*
+!.env.example
+
+# ---- 运行期数据（不入库）----
+data/            # SQLite 数据文件（weshare.db / -wal / -shm）
+uploads/         # 附件
+logs/
+*.db
+*.db-wal
+*.db-shm
+
+# ---- 工具临时目录 ----
+.screenshots/
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# ---- 测试与覆盖率 ----
+coverage/
+*.lcov
+
+# ---- 依赖固化包（体积大，按需生成）----
+offline/
+.pnpm-store/
+*.tgz
