@@ -1,0 +1,54 @@
+# CNB 云原生构建流水线（cnb.cool）
+#
+# 与 GitHub Actions 跑同一套检查：`pnpm verify:full`
+#   —— 仓库规范与护栏、类型检查、Lint、单元测试、数据库迁移校验
+#
+# 镜像用 node:22（架构文档定的生产基线 LTS）；本地开发可以是更新的版本，
+# 但 CI 必须锁在 LTS，避免"本地能跑、CI 挂"。
+main:
+  push:
+    - name: 代码检查
+      docker:
+        image: node:22
+      stages:
+        - name: 准备 pnpm
+          script:
+            # 版本必须与根 package.json 的 packageManager 一致
+            - corepack enable
+            - corepack prepare pnpm@9.14.4 --activate
+            - node -v
+            - pnpm -v
+        - name: 安装依赖
+          script:
+            - pnpm install --frozen-lockfile
+        - name: 完整验证
+          script:
+            - pnpm verify:full
+
+  pull_request:
+    - name: PR 检查
+      docker:
+        image: node:22
+      stages:
+        - name: 准备 pnpm
+          script:
+            - corepack enable
+            - corepack prepare pnpm@9.14.4 --activate
+        - name: 安装依赖
+          script:
+            - pnpm install --frozen-lockfile
+        - name: 完整验证
+          script:
+            - pnpm verify:full
+
+# 云原生开发环境：点仓库页面的「云原生开发」按钮时启动
+$:
+  vscode:
+    - docker:
+        image: node:22
+      stages:
+        - name: 准备开发环境
+          script:
+            - corepack enable
+            - corepack prepare pnpm@9.14.4 --activate
+            - pnpm install
