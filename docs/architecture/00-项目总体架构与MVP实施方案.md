@@ -1399,8 +1399,11 @@ node scripts/verify.mjs --list           # 列出所有步骤
 | 禁止手写 DDL | 表结构只能来自 `prisma migrate` 生成的迁移 | `check-repo-layout.mjs` |
 | 文档数字不得腐烂 | 文档里的"N 条"必须等于现算值；`§X.Y` 引用必须指向存在的章节 | `check-doc-numbers.mjs` |
 | 测试不得静默不跑 | 磁盘上的测试文件必须被 `test` 脚本覆盖（或改用 glob） | `check-test-manifest.mjs` |
+| 测试不得被删光 | 测试文件数量不得低于下限（当前 8） | `check-test-count.mjs` |
 
 `check-doc-numbers.mjs` 的现算能力：不变式条数与编号连续性、各 Phase 验收条数、§16 表格行数、所有 `§X.Y` 交叉引用的有效性。它同时是一个双向检查——**文档改了数字要同步改内容，代码改了内容要同步改文档**。
+
+**两条测试护栏互补，缺一不可**：`check-test-manifest.mjs` 防"新增测试文件但没登记进收集范围，从未执行过"；`check-test-count.mjs` 防"把测试文件删光"。后者尤其必要，因为 `vitest run --passWithNoTests` 在零测试时返回 0——**删光测试后 CI 依然全绿**，与 §17.3「零覆盖 ≠ 通过」直接冲突。
 
 **数据访问层的测试用真实数据库，不用 mock**。Repository 的价值全在"Prisma 查询 ↔ 领域类型"的转换与事务边界上——mock 掉 Prisma 就把这些全测没了，只剩下"代码跑通了"这种无信息量的断言。集成测试读的是 `prisma/migrations/` 下将来要部署到生产的那份 SQL，因此测试与生产结构不会漂移。
 

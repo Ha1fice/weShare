@@ -112,6 +112,24 @@ const CASES = [
       writeFileSync(path.join(dir, 'outside.test.ts'), '// test\n', 'utf8')
     },
   },
+  {
+    guard: 'scripts/guards/check-test-count.mjs',
+    label: '把测试文件删到低于下限，数量护栏必须失败',
+    breakIt(dir) {
+      // 删掉大部分测试文件——模拟"测试被悄悄删光"
+      const testDirs = [
+        path.join(dir, 'packages', 'authz', 'src'),
+        path.join(dir, 'packages', 'db', 'test'),
+      ]
+      for (const d of testDirs) {
+        if (!existsSync(d)) continue
+        for (const name of readdirSync(d)) {
+          if (!/\.(test|spec)\./i.test(name)) continue
+          rmSync(path.join(d, name), { force: true })
+        }
+      }
+    },
+  },
 ]
 
 /** 复制时不进入的目录名（任意层级）。 */

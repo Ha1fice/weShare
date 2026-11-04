@@ -87,6 +87,14 @@ const steps = [
   },
   {
     group: 'repo',
+    name: '测试数量守卫',
+    why: '把测试文件删光后 --passWithNoTests 仍返回 0，CI 会一直绿',
+    enabled: () => exists(path.join(ROOT, 'package.json')),
+    cmd: NODE,
+    args: ['scripts/guards/check-test-count.mjs'],
+  },
+  {
+    group: 'repo',
     name: '敏感文件检查',
     why: '密钥一旦推到远端就永远留在 git 历史里——即使删除文件也无效',
     cmd: NODE,
