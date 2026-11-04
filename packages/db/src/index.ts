@@ -47,6 +47,6 @@ export type {
   WorkspacesRepository,
 } from './repo/interfaces.js'
 
-export { normalizeEmail, normalizeTitle } from './repo/implementations.js'
+export { normalizeEmail, normalizeTitle } from './repo/mapping.js'
 
-export { createRepositories } from './repo/implementations.js'
+export { createRepositories } from './repo/index.js'

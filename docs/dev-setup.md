@@ -68,7 +68,7 @@ pnpm dev            # 并行启动三个服务
 pnpm build          # 构建全部
 pnpm typecheck      # 全量类型检查
 pnpm lint           # 全量 lint
-pnpm test           # 全量单元测试
+pnpm test           # 全量单元测试（含 Repository 的真实数据库集成测试）
 pnpm format         # Prettier 格式化
 
 pnpm verify         # 快速层验证（仓库规范 + 护栏 + typecheck/lint/test）
@@ -79,6 +79,22 @@ pnpm db:migrate     # 执行数据库迁移（可重复执行）
 pnpm db:seed        # 写入示例数据
 pnpm db:verify      # 迁移校验（空库执行得完整结构、二次执行无副作用、结构逐项对照）
 ```
+
+## 数据访问层的测试
+
+`packages/db/test/` 下的集成测试用**真实数据库**，不用 mock——Repository 的价值全在"Prisma 查询 ↔ 领域类型"的转换与事务边界上，mock 掉 Prisma 就把这些全测没了。
+
+```bash
+pnpm --filter @weshare/db test          # 只跑 Repository 集成测试
+pnpm --filter @weshare/db test --watch  # 监听模式
+```
+
+测试库是仓库内的文件库（`data/test/`），每个测试文件一个独立库，结构由 `prisma/migrations/` 的迁移 SQL 建立——**测试用的就是将来要部署到生产的那份 SQL**。
+
+两个容易踩的坑（详见架构文档 §15.2 限制 9–11）：
+
+- **不要把测试库换成 `:memory:`**。libSQL 的内存库按连接隔离，Prisma 连接池开出第二个连接时会报 `no such table`，而 raw SQL 却能正常——排查极具迷惑性。
+- **测试库目录由 `globalSetup` 管理**，不要在测试里自己删。libSQL 在 Windows 上不及时释放文件句柄，立即删会 EPERM；残留由下一轮运行的 `setup()` 清掉。
 
 ## 修改数据模型
 

@@ -12,7 +12,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { createPrismaClient, disconnectPrisma } from '../src/client.js'
-import { createRepositories } from '../src/repo/implementations.js'
+import { createRepositories } from '../src/repo/index.js'
 import { migrate } from './migrate.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))

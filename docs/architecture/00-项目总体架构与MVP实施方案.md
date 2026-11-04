@@ -1,8 +1,8 @@
 # 项目总体架构与 MVP 实施方案
 
 > 文档性质：Phase 0 交付物，指导 Phase 1–5 的实施基线  
-> 版本：v1.3（2026-11-03）  
-> 状态：**已确认**（v1.0 经评审后修订为 v1.1；v1.2 补开源与治理；v1.3 完成 ORM 替换为 Prisma；变更清单见 §16）  
+> 版本：v1.4（2026-11-04）  
+> 状态：**已确认**（v1.0 经评审后修订为 v1.1；v1.2 补开源与治理；v1.3 完成 ORM 替换为 Prisma；v1.4 补 Repository 拆分与集成测试；变更清单见 §16）  
 > 适用范围：整个平台（平台层 / 文档编辑器 / 表格编辑器 / 协同服务 / 数据层）  
 > 上位依据：`项目总指导`（产品方向与优先级）＞ 本文 ＞ 三份技术调研报告  
 > 已决事项：数据库 = SQLite 单文件 + **Prisma 7.10.1**（§15-D2/D2a）；前端 UI = Reka UI + UnoCSS（§15-D1）；开源发布 = Apache-2.0 + GitHub（§15-D6）
@@ -423,16 +423,19 @@ workspaces ──1:N── audit_events
 |---|---|---|
 | `packages/db/prisma/schema.prisma` | 表结构定义（Prisma Schema） | 是 |
 | `packages/db/prisma/migrations/*/migration.sql` | 迁移 SQL + Prisma 无法表达的定制索引 | 是 |
-| `packages/db/src/repo/implementations.ts` | Repository 实现，负责 Prisma ↔ 领域类型转换 | 是（仅此一处） |
+| `packages/db/src/repo/mapping.ts` | Prisma 行类型 ↔ 领域类型的转换（实现层共享） | 是（仅此一处） |
+| `packages/db/src/repo/*.repo.ts` | 八个仓储实现，按业务聚合各一个文件 | 是 |
 | `packages/db/src/repo/interfaces.ts` | Repository 接口（业务领域类型） | 否 |
+| `packages/db/src/repo/types.ts` | 业务领域类型 | 否 |
 | `apps/*`、`packages/*`（db 除外） | 业务逻辑 | **否**（不变式 I7：不得接触 ORM 与驱动） |
 
 **Repository 层约定**
 
-- 按**业务聚合**组织，不按数据库表拆分：`users` / `workspaces` / `nodes` / `contents` / `acl` / `versions` / `attachments` / `audit` 八个仓储，各自对应一个业务用例聚合。
+- 按**业务聚合**组织，不按数据库表拆分：`users` / `workspaces` / `nodes` / `contents` / `acl` / `versions` / `attachments` / `audit` 八个仓储，各自对应一个业务用例聚合，**各占一个文件**（`*.repo.ts`），共享的转换逻辑集中在 `mapping.ts`。
 - 接口只用**业务领域类型**（`packages/db/src/repo/types.ts`）。数据库列名 `title_norm` 在领域里是 `titleNormalized`，`email_lower` 是 `email`——领域类型与列名解耦。
 - 不提供无业务意义的通用 CRUD。方法是业务动作（`softDelete`、`listTrash`、`listAncestors`），不是 `listAll` / `findById` 堆砌。
 - **事务边界在实现层**。跨表原子操作（如"建空间 + 加 owner 成员"）由 Repository 内部用 `$transaction` 完成，不让 Service 层跨 Repository 拼事务。
+- **每个仓储都有真实集成测试**（`packages/db/test/`）。用真实数据库而非 mock——Repository 的价值全在"Prisma 查询 ↔ 领域类型"的转换与事务边界上，mock 掉 Prisma 就把这些全测没了。
 
 **类型映射**
 
@@ -859,16 +862,30 @@ weShare/
 │     │  └─ migrations/              # prisma migrate 生成的迁移（含定制索引），检入仓库
 │     ├─ src/
 │     │  ├─ client.ts                # Prisma Client 工厂（adapter + pragma），包内私有
-│     │  ├─ repo/                    # Repository（按业务聚合组织）
+│     │  ├─ repo/                    # Repository（按业务聚合组织，每个聚合一个文件）
 │     │  │  ├─ types.ts              # 业务领域类型（对外契约）
 │     │  │  ├─ interfaces.ts         # Repository 接口
-│     │  │  └─ implementations.ts    # Prisma 实现（唯一允许出现 Prisma 类型的地方）
+│     │  │  ├─ mapping.ts            # Prisma 行类型 ↔ 领域类型转换（实现层共享）
+│     │  │  ├─ users.repo.ts         # 账号与会话
+│     │  │  ├─ workspaces.repo.ts    # 空间与成员
+│     │  │  ├─ nodes.repo.ts         # 目录树与回收站
+│     │  │  ├─ contents.repo.ts      # 正文（镜像 + Y.Doc + 乐观锁）
+│     │  │  ├─ acl.repo.ts           # 节点授权（allow / deny）
+│     │  │  ├─ versions.repo.ts      # 版本快照
+│     │  │  ├─ attachments.repo.ts   # 附件元数据
+│     │  │  ├─ audit.repo.ts         # 审计流水
+│     │  │  └─ index.ts              # 工厂：组装全部仓储，返回接口类型
 │     │  └─ index.ts                 # 对外导出：只含领域类型与 Repository 接口
+│     ├─ test/                       # Repository 集成测试（真实数据库，非 mock）
+│     │  ├─ fixture.ts               # 建库夹具（应用迁移 SQL + 共享 client）
+│     │  ├─ global-setup.ts          # 测试库目录的 setup / teardown
+│     │  └─ *.repo.test.ts           # 各仓储的集成测试
 │     ├─ scripts/
 │     │  ├─ migrate.ts               # 迁移执行（migrate dev / deploy）
 │     │  ├─ seed.ts                  # 示例数据（经 Repository 写入）
 │     │  ├─ verify-migrations.ts     # 迁移幂等 + 漂移检查
 │     │  └─ verify-structure.ts      # 结构逐项对照（对照基准写在此文件）
+│     ├─ vitest.config.ts            # 测试配置（forks 池 + 全局钩子）
 │     └─ prisma.config.ts            # Prisma 7 配置（schema 路径 + 连接 URL）
 ├─ infra/
 │  ├─ scripts/                      # 备份（VACUUM INTO）、离线依赖固化、迁移执行
@@ -1045,7 +1062,7 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 - T1.3 生成首个迁移并检入 `packages/db/prisma/migrations/`（含 Prisma 无法表达的部分索引）；`db:migrate` 脚本可重复执行。判据：空库执行一次即得完整结构，二次执行无副作用。**已完成**（2026-11-03）。
 - T1.4 seed 脚本：1 个管理员、1 个示例空间、3 个示例文档。判据：`db:seed` 后登录即可见数据。**已完成**（2026-11-03）。
 - T1.5 数据访问隔离 CI 脚本：扫描业务层是否 import 了 Prisma Client / 驱动 / `packages/db` 内部路径，命中即失败。判据：故意写入一处 `import { PrismaClient } from "@prisma/client"` 后 CI 红。**已完成**（2026-11-03）。
-- T1.6 Repository 层：`packages/db/src/repo/` 下按业务聚合建 8 个仓储 + `types.ts`（业务领域类型）+ `interfaces.ts`（接口）。判据：业务层不接触 Prisma 类型（由 T1.5 护栏强制）；接口方法对应业务动作而非机械 CRUD。**已完成**（2026-11-03，骨架层）。
+- T1.6 Repository 层：`packages/db/src/repo/` 下按业务聚合建 8 个仓储（每个聚合一个 `*.repo.ts`）+ `types.ts`（业务领域类型）+ `interfaces.ts`（接口）+ `mapping.ts`（Prisma ↔ 领域类型转换）。判据：业务层不接触 Prisma 类型（由 T1.5 护栏强制）；接口方法对应业务动作而非机械 CRUD；**每个仓储有真实数据库的集成测试**（`packages/db/test/`，非 mock）。**已完成**（2026-11-04：8 个仓储全部有集成测试，共 72 项断言）。
 
 **T2 认证与会话**
 - T2.1 scrypt 密码哈希 + 注册/登录/登出/`GET /me`/`PATCH /me`；会话 Cookie（httpOnly、SameSite=Lax、生产 Secure、30 天滑动续期）。
@@ -1149,8 +1166,13 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 | 6 | **Windows 路径格式敏感** | `file:///C:/...`（三斜杠）被 schema engine 拒绝，报 os error 161 | 统一用 `file:C:/...`（两斜杠），见 `packages/db/scripts/migrate.ts` 的 `toDatabaseUrl()` |
 | 7 | **schema engine 无法在系统临时目录建库** | `%LOCALAPPDATA%\Temp` 下报 os error 161 | 校验库放在仓库的 `data/` 下，不用系统临时目录 |
 | 8 | **Prisma 8 未采用** | Prisma 8 是 RC，API 与 7 不同（TypeScript schema、图迁移、查询 DSL 重写） | 锁 `prisma@^7.10.1`；升级走单独 PR，需重跑 PoC |
+| 9 | **libSQL 的 `:memory:` 按连接隔离** | 每个连接看到一个独立的空库。Prisma 有连接池，池里开出第二个连接时模型 API 报 `no such table: main.nodes`，而 raw SQL 走另一连接却能看到表——**排查极具迷惑性** | 集成测试一律用文件库（`packages/db/test/fixture.ts`）；`:memory:` 仅用于一次性探测脚本 |
+| 10 | **libSQL 的文件句柄在 Windows 上不及时释放** | `close()` 后立即删库文件报 `EPERM`；即便 worker 进程退出，句柄仍被占用，Vitest `teardown` 阶段删目录必然失败 | 测试库放仓库内 `data/test/`，由 `globalSetup` 的 `setup()` 在**下一轮运行前**清理（那时进程已退出）；`teardown()` 只做尽力而为的清理，失败不影响测试结果 |
+| 11 | **Prisma adapter 内部自建 client** | 无法把外部 client 传进去；建表脚本与 Prisma 若各建各的 client，就不是同一个库 | 覆写 adapter 的 `createClient()` 返回自有实例（`packages/db/test/fixture.ts` 的 `SharedClientLibSqlAdapter`） |
 
 **已知限制的共同点**：它们都源于"Prisma 的抽象层比 SQLite 的能力更强"。切换到 PostgreSQL 时，限制 1、2、3、4 全部消失（PG 支持 jsonb 默认值、enum 类型、GIN 索引、表达式索引）。这也是切换 PostgreSQL 的额外收益，不只是容量与并发。
+
+限制 9、10、11 是 **libSQL 驱动层**的特性，与 PostgreSQL 无关——切换 PG 后同样适用同样的应对手段（PG 无内存库隔离问题，但连接池与句柄释放的注意事项类似）。
 
 ---
 
@@ -1202,9 +1224,9 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 
 ---
 
-## 16. 评审记录（v1.0 → v1.2）
+## 16. 评审记录（v1.0 → v1.4）
 
-**评审日期**：2026-11-03　**结论**：v1.0 的架构方向成立，予以确认；同时修订 19 处缺陷、5 项决策（其中 2 项由本文档作者拍板但记录在此）。v1.2 完成 ORM 从 Drizzle 到 Prisma 的基础设施替换（用户决策，见 §16.5）。
+**评审日期**：2026-11-03　**结论**：v1.0 的架构方向成立，予以确认；同时修订 19 处缺陷、5 项决策（其中 2 项由本文档作者拍板但记录在此）。v1.2 完成 ORM 从 Drizzle 到 Prisma 的基础设施替换（用户决策，见 §16.5）。v1.4 按业务聚合拆分 Repository 并补齐真实数据库的集成测试（见 §16.6）。
 
 ### 16.1 决策变更
 
@@ -1284,6 +1306,37 @@ DOCX/XLSX 任何导入导出、Office 在线预览、ONLYOFFICE/Collabora、PDF 
 
 **未改动的部分**：`apps/*` 全部业务代码、`packages/{shared,authz,doc-schema}`、CI workflow 结构、§12 验收标准、§14 任务清单。
 
+### 16.6 Repository 层拆分与集成测试（v1.4）
+
+**背景**：v1.3 交付时，Repository 层是 991 行的单文件 `implementations.ts`，且**从未被真实调用过**——测试只覆盖了 authz。骨架里的实现可能有 bug 而 CI 全绿。
+
+**拆分**：按授权的业务聚合结构改为 8 个 `*.repo.ts` + 共享的 `mapping.ts` + 工厂 `index.ts`。行为保持完全一致（typecheck 与既有验证全绿）。
+
+**补测试**：8 个仓储全部补上真实数据库的集成测试，共 **72 项断言**（authz 的 23 项之外）。覆盖的关键行为：
+
+| 仓储 | 关键验证 |
+|---|---|
+| users | 邮箱大小写不敏感查找与唯一性（数据库层保证）、会话创建/撤销/过期清理、删用户级联删会话 |
+| workspaces | 建空间与加 owner 成员原子完成、成员 upsert / 移除、删空间级联删成员 |
+| nodes | 标题归一化、软删除标记整个子树、按 trashRootId 整批还原、面包屑顺序、**标题搜索是前缀匹配而非包含匹配**、彻底删除级联 |
+| contents | revision 递增、乐观锁冲突抛错、协同落库写 storedAt 且不动 revision、字节字段可置 null |
+| acl | allow / deny 两种效果、upsert 覆盖而非新增、按主体查询同时命中用户与空间、撤销不能跨节点 |
+| versions | 版本号递增、裁剪只删超量 auto 不动 manual |
+| attachments | 关联/解除关联、**删节点后附件保留但置 null**（ON DELETE SET NULL）、删空间级联删附件 |
+| audit | 自增主键、metadata 缺省为空对象、分页按时间倒序、跨空间不泄漏 |
+
+**测试中发现并处理的实际问题**：
+
+| # | 问题 | 处置 |
+|---|---|---|
+| 1 | libSQL 的 `:memory:` 按**连接**隔离 | Prisma 连接池开出第二个连接时模型 API 报 `no such table: main.nodes`，而 raw SQL 走另一连接却能看到表。改用文件库（§15.2 限制 9） |
+| 2 | libSQL 的文件句柄在 Windows 上不及时释放 | `close()` 后立即删库文件报 EPERM。测试库改由 `globalSetup` 的 `setup()` 在下一轮运行前清理（§15.2 限制 10） |
+| 3 | Prisma adapter 内部自建 client | 覆写 adapter 的 `createClient()` 返回自有实例，否则建表脚本与 Prisma 指向不同的库（§15.2 限制 11） |
+| 4 | Vitest 5 只有 `globalSetup` 一个文件钩子 | `setup` 与 `teardown` 从同一文件导出；`teardown` 只做尽力而为的清理，失败不影响测试结果 |
+| 5 | 测试期望写成"包含匹配" | 架构文档 §5.2 明确是**前缀匹配**，实现是对的、测试写错了。已改正测试并补一条用例把该语义钉死 |
+
+第 5 条值得单独记一笔：**测试失败时先怀疑测试，还是先怀疑实现，取决于是否有权威依据**。这里权威依据是架构文档的"前缀匹配"表述，实现与文档一致，因此是测试错了。这类误判如果反过来（改实现去迁就测试），就会悄悄偏离既定设计。
+
 ---
 
 ## 17. 测试与 CI 策略
@@ -1349,6 +1402,10 @@ node scripts/verify.mjs --list           # 列出所有步骤
 
 `check-doc-numbers.mjs` 的现算能力：不变式条数与编号连续性、各 Phase 验收条数、§16 表格行数、所有 `§X.Y` 交叉引用的有效性。它同时是一个双向检查——**文档改了数字要同步改内容，代码改了内容要同步改文档**。
 
+**数据访问层的测试用真实数据库，不用 mock**。Repository 的价值全在"Prisma 查询 ↔ 领域类型"的转换与事务边界上——mock 掉 Prisma 就把这些全测没了，只剩下"代码跑通了"这种无信息量的断言。集成测试读的是 `prisma/migrations/` 下将来要部署到生产的那份 SQL，因此测试与生产结构不会漂移。
+
+这套测试踩过三个 libSQL 的坑（`:memory:` 按连接隔离、文件句柄不及时释放、adapter 自建 client），已记入 §15.2 限制 9–11。
+
 ### 17.6 失败诊断走注解通道
 
 GitHub 的 job 日志页对匿名访问关闭（`actions/jobs/{id}/logs` API 匿名返回 403）。实测三条渠道里只有 **check-run 注解**可匿名读取。
@@ -1361,7 +1418,13 @@ GitHub 的 job 日志页对匿名访问关闭（`actions/jobs/{id}/logs` API 匿
 
 理由：gosslan 是 Tauri + Rust，前端没有 DOM 测试地基，只能靠 CDP 真实浏览器探针；weShare 有 Vue 组件与编辑器逻辑，需要 `jsdom` 环境与组件测试能力，`node --test` 做不到。**这是 gosslan 范本最弱的一环，不照抄。**
 
-数据库测试：用 **SQLite 内存库**（`:memory:`），每测试独立实例 + 跑一遍迁移。不引入 testcontainers、不引入 Docker——与 §2.2 的环境决策一致。
+数据库测试用**文件库**，不用 `:memory:` 内存库——这一点是实测纠正的（§15.2 限制 9、§16.6）：
+
+- libSQL 的 `:memory:` 是**按连接隔离**的：每个连接看到一个独立的空库。Prisma 有连接池，池里开出第二个连接时模型 API 报 `no such table: main.nodes`，而 raw SQL 走另一连接却能看到表。排查极具迷惑性。
+- 测试库是**文件库**，放在仓库内 `data/test/`，每个测试文件一个独立文件（并行互不干扰），结构由 `prisma/migrations/` 的迁移 SQL 建立——**测试用的就是将来要部署到生产的那份 SQL**，不会与生产结构漂移。
+- libSQL 的文件句柄在 Windows 上不及时释放，删除时机由 Vitest 的 `globalSetup` 控制（§15.2 限制 10）。
+
+不引入 testcontainers、不引入 Docker——与 §2.2 的环境决策一致。
 
 ### 17.8 已知不做的
 

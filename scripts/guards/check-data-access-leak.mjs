@@ -7,7 +7,7 @@
  *      - @prisma/client
  *      - @prisma/adapter-*（数据库驱动适配器）
  *      - @libsql/client、better-sqlite3、pg 等数据库驱动
- *      - packages/db 的内部路径（src/client、src/repo/implementations）
+ *      - packages/db 的内部路径（src/client、src/repo/*）
  *   2. packages/db 的**对外导出**（src/index.ts）不得暴露 Prisma 类型或驱动类型。
  *   3. 数据库专属 SQL 与迁移定制只允许存在于 packages/db 内。
  *
