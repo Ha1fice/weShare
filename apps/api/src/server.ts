@@ -6,11 +6,32 @@ import { randomUUID } from 'node:crypto'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { LogController } from 'fastify'
 import { ERROR_CODES, type ErrorCode } from '@weshare/shared'
+import { createDbHandle, type DbHandle, type Repositories } from '@weshare/db'
 import { loadConfig, type AppConfig } from './config.js'
 import { AppError, toErrorBody } from './http/errors.js'
+import { registerAuthRoutes } from './http/auth-routes.js'
+import { SessionService } from './domain/session-service.js'
+import { LoginRateLimiter } from './lib/login-rate-limit.js'
+
+export interface ServerDeps {
+  /**
+   * 数据库句柄。
+   *
+   * 业务侧只拿 Repository 接口——Prisma Client 始终留在 packages/db 内
+   * （不变式 I7）。测试注入用内存库建的句柄。
+   */
+  db?: DbHandle
+  /** 会话服务。 */
+  sessions?: SessionService
+  /** 登录限流器。 */
+  rateLimiter?: LoginRateLimiter
+}
 
 /** 组装 Fastify 实例（不监听端口，便于测试复用）。 */
-export async function buildServer(config: AppConfig = loadConfig()): Promise<FastifyInstance> {
+export async function buildServer(
+  config: AppConfig = loadConfig(),
+  deps: ServerDeps = {},
+): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
@@ -47,7 +68,9 @@ export async function buildServer(config: AppConfig = loadConfig()): Promise<Fas
     }
 
     if (fastifyError.statusCode === 413) {
-      return reply.status(413).send(toErrorBody('PAYLOAD_TOO_LARGE', '请求体过大', requestId))
+      return reply
+        .status(413)
+        .send(toErrorBody('PAYLOAD_TOO_LARGE', '请求体过大', requestId))
     }
 
     // 未知错误：不把细节返回给客户端
@@ -64,6 +87,35 @@ export async function buildServer(config: AppConfig = loadConfig()): Promise<Fas
   // /api/v1/healthz 供前端经 Vite 代理访问（开发期与生产同源）。
   app.get('/healthz', async () => ({ ok: true }))
   app.get('/api/v1/healthz', async () => ({ ok: true }))
+
+  // 数据层与领域服务
+  // Prisma Client 由 packages/db 内部创建与持有——业务侧只见 Repository 接口
+  const db = deps.db ?? createDbHandle(config.DB_PATH)
+  const repos: Repositories = db.repos
+  const sessionTtlMs = config.SESSION_TTL_DAYS * 24 * 60 * 60 * 1000
+  const sessions =
+    deps.sessions ?? new SessionService(repos, { ttlMs: sessionTtlMs })
+  const rateLimiter =
+    deps.rateLimiter ??
+    new LoginRateLimiter({
+      maxAttempts: config.LOGIN_MAX_ATTEMPTS,
+      windowMs: config.LOGIN_LOCK_WINDOW_SECONDS * 1000,
+    })
+
+  // 认证路由
+  registerAuthRoutes(app, {
+    repos,
+    sessions,
+    rateLimiter,
+    secureCookie: config.SECURE_COOKIE,
+    sessionMaxAgeSeconds: config.SESSION_TTL_DAYS * 24 * 60 * 60,
+    allowRegister: config.ALLOW_REGISTER,
+  })
+
+  // 进程退出前关闭数据库连接
+  app.addHook('onClose', async () => {
+    await db.close()
+  })
 
   return app
 }

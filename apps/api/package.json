@@ -18,7 +18,8 @@
     "fastify": "^5.12.8",
     "fastify-plugin": "^5.1.0",
     "pino": "^10.4.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "argon2": "^0.45.2"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

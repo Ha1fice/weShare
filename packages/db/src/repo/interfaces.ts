@@ -14,6 +14,7 @@
 
 import type {
   AclEntry,
+  AuthRecord,
   Attachment,
   AuditEvent,
   CreateAclInput,
@@ -46,6 +47,14 @@ export interface UsersRepository {
   findByEmail(email: string): Promise<User | null>
 
   /**
+   * 按邮箱查认证记录（用户 + 密码哈希）。
+   *
+   * **仅登录流程使用**。密码哈希不该出现在会被序列化的 User 上——
+   * 拆成这个方法，"取哈希"这件事在类型层面就是显式且局部的。
+   */
+  findAuthRecordByEmail(email: string): Promise<AuthRecord | null>
+
+  /**
    * 创建用户。
    * 邮箱大小写不敏感唯一——由数据库的 email_lower 唯一索引保证。
    * @throws 邮箱已存在
@@ -55,8 +64,23 @@ export interface UsersRepository {
   /** 更新显示名。 */
   updateDisplayName(id: string, displayName: string): Promise<User>
 
+  /**
+   * 更新密码哈希。
+   *
+   * 用于参数升级：将来把 Argon2 参数调高后，用户登录时用新参数重新哈希
+   * 并写回（旧哈希仍可校验，因此升级是渐进的）。
+   */
+  updatePasswordHash(id: string, passwordHash: string): Promise<void>
+
   /** 记录登录时间。 */
   touchLastLogin(id: string, at: Date): Promise<void>
+
+  /**
+   * 启用/禁用账号。
+   *
+   * 禁用的账号不能登录（认证路由会检查 status）。
+   */
+  setStatus(id: string, status: 'active' | 'disabled'): Promise<User>
 
   /**
    * 为用户创建会话。
@@ -76,6 +100,14 @@ export interface UsersRepository {
 
   /** 撤销会话（登出）。 */
   revokeSession(id: string, at: Date): Promise<void>
+
+  /**
+   * 延长会话有效期（滑动续期）。
+   *
+   * 会话服务在校验时发现剩余有效期不足一半就调用它，把会话续到完整 TTL。
+   * 不换 session id——换 id 会让客户端手里的 token 失效。
+   */
+  extendSession(id: string, newExpiresAt: Date): Promise<void>
 
   /** 清理过期会话。 */
   deleteExpiredSessions(before: Date): Promise<number>
@@ -315,6 +347,7 @@ export interface Repositories {
 // 保持类型引用，避免 lint 报未使用
 export type {
   AclEntry,
+  AuthRecord,
   Attachment,
   AuditEvent,
   CreateAclInput,

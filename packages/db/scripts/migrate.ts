@@ -16,8 +16,11 @@ import { fileURLToPath } from 'node:url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PKG_ROOT = path.resolve(HERE, '..')
 
+/** 仓库根目录。相对路径一律以它为基准。 */
+const REPO_ROOT = path.resolve(PKG_ROOT, '..', '..')
+
 /** 数据库文件路径。默认在仓库根的 data/weshare.db。 */
-export const DEFAULT_DB_PATH = path.resolve(PKG_ROOT, '../../data/weshare.db')
+export const DEFAULT_DB_PATH = path.resolve(REPO_ROOT, 'data', 'weshare.db')
 
 /**
  * 把路径转成 Prisma 可用的 file: URL。
@@ -25,11 +28,16 @@ export const DEFAULT_DB_PATH = path.resolve(PKG_ROOT, '../../data/weshare.db')
  * Windows 必须是 `file:C:/path/to.db`（两斜杠）。三斜杠形式
  * （`file:///C:/...`）会被 Prisma 7 的 schema engine 拒绝，
  * 报 os error 161「指定的路径无效」。
+ *
+ * 相对路径按**仓库根**解析——必须与 `src/client.ts` 的 `toDatabaseUrl`
+ * 保持一致，否则"迁移的库"与"应用连的库"会落在不同位置。
  */
 export function toDatabaseUrl(dbPath: string): string {
   if (dbPath === ':memory:') return 'file::memory:'
-  const abs = path.resolve(dbPath).replace(/\\/g, '/')
-  return `file:${abs}`
+  const abs = path.isAbsolute(dbPath)
+    ? dbPath
+    : path.resolve(REPO_ROOT, dbPath)
+  return `file:${abs.replace(/\\/g, '/')}`
 }
 
 /**

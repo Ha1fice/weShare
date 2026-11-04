@@ -7,7 +7,7 @@
 
 import type { PrismaClient } from '../../generated/client/client.js'
 import type { UsersRepository } from './interfaces.js'
-import type { CreateUserInput, Session, User } from './types.js'
+import type { AuthRecord, CreateUserInput, Session, User } from './types.js'
 import {
   normalizeEmail,
   toBytes,
@@ -32,6 +32,14 @@ export class UsersRepositoryImpl implements UsersRepository {
     return row ? toUser(row) : null
   }
 
+  async findAuthRecordByEmail(email: string): Promise<AuthRecord | null> {
+    const row = (await this.prisma.user.findUnique({
+      where: { emailLower: normalizeEmail(email) },
+    })) as PrismaUser | null
+    if (!row) return null
+    return { user: toUser(row), passwordHash: row.passwordHash }
+  }
+
   async create(input: CreateUserInput): Promise<User> {
     const row = (await this.prisma.user.create({
       data: {
@@ -54,8 +62,20 @@ export class UsersRepositoryImpl implements UsersRepository {
     return toUser(row)
   }
 
+  async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
+    await this.prisma.user.update({ where: { id }, data: { passwordHash } })
+  }
+
   async touchLastLogin(id: string, at: Date): Promise<void> {
     await this.prisma.user.update({ where: { id }, data: { lastLoginAt: at } })
+  }
+
+  async setStatus(id: string, status: 'active' | 'disabled'): Promise<User> {
+    const row = (await this.prisma.user.update({
+      where: { id },
+      data: { status },
+    })) as PrismaUser
+    return toUser(row)
   }
 
   async createSession(input: {
@@ -89,6 +109,11 @@ export class UsersRepositoryImpl implements UsersRepository {
 
   async revokeSession(id: string, at: Date): Promise<void> {
     await this.prisma.session.update({ where: { id }, data: { revokedAt: at } })
+  }
+
+  async extendSession(id: string, newExpiresAt: Date): Promise<void> {
+    // 不换 session id——换 id 会让客户端手里的 token 立刻失效
+    await this.prisma.session.update({ where: { id }, data: { expiresAt: newExpiresAt } })
   }
 
   async deleteExpiredSessions(before: Date): Promise<number> {

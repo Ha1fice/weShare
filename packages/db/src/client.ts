@@ -10,7 +10,19 @@
 
 import { PrismaLibSql } from '@prisma/adapter-libsql'
 import { PrismaClient } from '../generated/client/client.js'
-/** 数据库文件路径。默认在仓库根的 data/weshare.db。 */
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+/** 仓库根目录（本文件在 packages/db/src/ 下，往上两级）。 */
+const REPO_ROOT = path.resolve(HERE, '..', '..', '..')
+
+/**
+ * 数据库文件路径。默认在仓库根的 data/weshare.db。
+ *
+ * **相对于仓库根**，不是相对于进程 cwd——否则从不同目录启动服务会连到不同的库。
+ */
 export const DEFAULT_DB_PATH = 'data/weshare.db'
 
 /**
@@ -22,8 +34,12 @@ export const DEFAULT_DB_PATH = 'data/weshare.db'
  */
 export function toDatabaseUrl(dbPath: string): string {
   if (dbPath === ':memory:') return 'file::memory:'
-  const abs = dbPath.replace(/\\/g, '/')
-  return `file:${abs}`
+  // 相对路径按仓库根解析（与 migrate.ts 保持一致——
+  // 两边解析基准不同会导致"迁移的库"和"应用连的库"不是同一个）
+  const abs = path.isAbsolute(dbPath)
+    ? dbPath
+    : path.resolve(REPO_ROOT, dbPath)
+  return `file:${abs.replace(/\\/g, '/')}`
 }
 
 export interface DbOptions {

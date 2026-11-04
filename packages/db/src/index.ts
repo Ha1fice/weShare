@@ -50,3 +50,6 @@ export type {
 export { normalizeEmail, normalizeTitle } from './repo/mapping.js'
 
 export { createRepositories } from './repo/index.js'
+
+export { createDbHandle } from './factory.js'
+export type { DbHandle } from './factory.js'

@@ -37,7 +37,25 @@ pnpm dev
 | api（Fastify）       | http://127.0.0.1:3000 |
 | collab（Hocuspocus） | ws://127.0.0.1:3100   |
 
-打开 http://127.0.0.1:5173 ，页面会显示后端健康状态。
+打开 http://127.0.0.1:5173 会跳转到登录页。**seed 脚本创建的管理员账号**（见 `packages/db/scripts/seed.ts`）可直接登录。
+
+## 账号与会话
+
+| 操作     | 说明                                                                 |
+| -------- | -------------------------------------------------------------------- |
+| 注册     | `POST /api/v1/auth/register` — 需 `ALLOW_REGISTER=true`（生产应关闭） |
+| 登录     | `POST /api/v1/auth/login` — 成功后下发会话 Cookie                  |
+| 登出     | `POST /api/v1/auth/logout` — 服务端删除会话，旧 token 立即失效      |
+| 当前用户 | `GET /api/v1/me` — 返回用户与空间列表                              |
+| 修改资料 | `PATCH /api/v1/me` — 改显示名                                       |
+
+**密码策略**（NIST SP 800-63B-4）：15–64 字符，不要求字符类型组合。
+
+**本地开发的 Cookie**：`SECURE_COOKIE=false` 时用普通 Cookie 名 `weshare_session`（`__Host-` 前缀强制要求 `Secure`，本地 http 用不了）。生产走 https 时必须设 `SECURE_COOKIE=true`，否则子域可以覆盖会话 Cookie。
+
+**登录限流**：同 IP 连续 5 次失败后，第 6 次请求返回 `429 RATE_LIMITED`。窗口长度由 `LOGIN_LOCK_WINDOW_SECONDS` 控制（默认 60 秒）。开发时若被误锁，等窗口过去即可，或重启 api 进程（计数在进程内存里）。
+
+**DB_PATH 相对于仓库根**，不是相对于启动目录——从哪个目录启动 api 都会连到同一个库。
 
 ## 端口冲突怎么办
 

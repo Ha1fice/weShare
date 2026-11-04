@@ -54,6 +54,21 @@ export interface CreateUserInput {
   displayName: string
 }
 
+/**
+ * 认证记录：用户 + 密码哈希。
+ *
+ * **仅登录流程使用，绝不出现在 API 响应里。**
+ *
+ * 为什么不把 passwordHash 塞进 User：
+ *   User 是会被序列化成 JSON 返回给客户端的视图（GET /me）。
+ *   一旦 passwordHash 在 User 上，就有可能被某个"返回整个 user"的接口带出去。
+ *   拆成两个类型，让"带哈希"这件事在类型层面就是显式的、局部的。
+ */
+export interface AuthRecord {
+  user: User
+  passwordHash: string
+}
+
 export interface Session {
   id: string
   userId: string

@@ -126,3 +126,35 @@ export type AttachmentMime = (typeof ATTACHMENT_MIME_WHITELIST)[number]
 
 /** 附件大小上限（字节，架构文档 §12 Phase 2 验收 6）。 */
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+
+// ---------------------------------------------------------------- 密码策略
+
+export {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_NORMALIZATION,
+  normalizePassword,
+  checkPasswordPolicy,
+  passwordPolicyMessage,
+  PasswordSchema,
+} from './password-policy.js'
+export type { PasswordPolicyResult } from './password-policy.js'
+
+// ---------------------------------------------------------------- 认证契约
+
+export {
+  EmailSchema,
+  DisplayNameSchema,
+  RegisterBodySchema,
+  LoginBodySchema,
+  UpdateMeBodySchema,
+} from './auth-contract.js'
+
+export type {
+  RegisterBody,
+  LoginBody,
+  UpdateMeBody,
+  CurrentUser,
+  MeResponse,
+  AuthResponse,
+} from './auth-contract.js'

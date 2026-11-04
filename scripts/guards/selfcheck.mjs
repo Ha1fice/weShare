@@ -94,6 +94,19 @@ const CASES = [
     },
   },
   {
+    guard: 'scripts/guards/check-data-access-leak.mjs',
+    label: '在业务代码里 import 测试辅助（建库），数据访问隔离护栏必须失败',
+    breakIt(dir) {
+      const dir2 = path.join(dir, 'apps', 'api', 'src')
+      mkdirSync(dir2, { recursive: true })
+      writeFileSync(
+        path.join(dir2, 'leak-test-support.ts'),
+        "import { createTestDatabase } from '@weshare/db/test-support'\nexport const x = createTestDatabase\n",
+        'utf8',
+      )
+    },
+  },
+  {
     guard: 'scripts/guards/check-sensitive-files.mjs',
     label: '把 .env 纳入 git 追踪，敏感文件护栏必须失败',
     breakIt(dir) {

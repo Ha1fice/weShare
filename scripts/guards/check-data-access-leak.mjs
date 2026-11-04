@@ -41,6 +41,11 @@ const FORBIDDEN_DB_PATHS = [
   { pattern: /@weshare\/db\/src\//, why: 'packages/db 的内部实现' },
   { pattern: /from ['"].*packages\/db\/src\//, why: 'packages/db 的内部实现' },
   { pattern: /@weshare\/db\/generated/, why: 'Prisma 生成的 Client' },
+  {
+    pattern: /@weshare\/db\/test-support/,
+    why: '测试辅助（建库/清库）只能在测试文件里用——业务代码不该建库',
+    testOnly: true,
+  },
 ]
 
 /** 受检的业务代码目录。 */
@@ -108,6 +113,23 @@ if (scannable.length === 0) {
 
 const violations = []
 
+/**
+ * 测试文件可以 import 测试辅助（建库/清库）。
+ *
+ * 这不是放水——测试辅助只在测试运行时用，不进生产产物。
+ * 业务代码（src/ 下的非测试文件）仍然禁止。
+ *
+ * 判定：文件名以 .test./.spec. 结尾，或位于 test/ 或 __tests__/ 目录下。
+ * 后者很重要——夹具文件（如 test/fixture.ts）不是 .test.ts，
+ * 但它同样只在测试时使用。
+ */
+function isTestFile(rel) {
+  return (
+    /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(rel) ||
+    /(^|\/)(__tests__|test)\//.test(rel)
+  )
+}
+
 for (const file of scannable) {
   const rel = path.relative(ROOT, file).replace(/\\/g, '/')
   let text
@@ -116,6 +138,7 @@ for (const file of scannable) {
   } catch {
     continue
   }
+  const testFile = isTestFile(rel)
   const lines = text.split('\n')
   lines.forEach((line, i) => {
     // 只看 import 语句，注释里提到不算
@@ -133,6 +156,8 @@ for (const file of scannable) {
       }
     }
     for (const f of FORBIDDEN_DB_PATHS) {
+      // testOnly 的规则在测试文件里放行（测试辅助只在测试时用）
+      if (f.testOnly && testFile) continue
       if (f.pattern.test(line)) {
         violations.push({
           file: rel,

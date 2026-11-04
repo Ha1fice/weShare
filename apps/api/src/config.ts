@@ -20,11 +20,32 @@ const ConfigSchema = z.object({
   /** 允许的跨域来源。生产必须显式配置。 */
   CORS_ORIGINS: z.string().default(''),
 
-  /** 日志级别。 */
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  /** 日志级别。silent = 完全不输出（测试用）。 */
+  LOG_LEVEL: z
+    .enum(['silent', 'fatal', 'error', 'warn', 'info', 'debug', 'trace'])
+    .default('info'),
 
   /** 会话有效期（天）。 */
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+
+  /**
+   * 是否为生产环境（决定 Cookie 的 Secure 与 `__Host-` 前缀）。
+   *
+   * `__Host-` 前缀要求 secure=true，本地 http 开发无法使用，
+   * 因此不能简单用 NODE_ENV 判断——要显式配置。
+   */
+  SECURE_COOKIE: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
+  /**
+   * 登录失败锁定阈值（同 IP 窗口内的最大失败次数）。
+   */
+  LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(5),
+
+  /** 登录失败锁定窗口（秒）。 */
+  LOGIN_LOCK_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
 
   /** 是否开放注册。生产应关闭。 */
   ALLOW_REGISTER: z
