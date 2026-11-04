@@ -2,13 +2,15 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { useSessionStore } from '@/stores/session.js'
 import LoginPage from '@/pages/LoginPage.vue'
-import HomePage from '@/pages/HomePage.vue'
+import WorkspacePage from '@/pages/WorkspacePage.vue'
+import DocPage from '@/pages/DocPage.vue'
+import WorkspaceSettingsPage from '@/pages/WorkspaceSettingsPage.vue'
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
-    component: HomePage,
+    component: () => import('@/pages/HomePage.vue'),
     meta: { requiresAuth: true },
   },
   {
@@ -22,6 +24,24 @@ const routes: RouteRecordRaw[] = [
     name: 'healthz',
     component: () => import('@/pages/HealthPage.vue'),
     meta: { requiresAuth: false },
+  },
+  {
+    path: '/w/:workspaceId',
+    name: 'workspace',
+    component: WorkspacePage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/w/:workspaceId/settings',
+    name: 'workspace-settings',
+    component: WorkspaceSettingsPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/n/:nodeId',
+    name: 'doc',
+    component: DocPage,
+    meta: { requiresAuth: true },
   },
 ]
 
