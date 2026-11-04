@@ -62,6 +62,52 @@ async function seedTree() {
 }
 
 describe('NodesRepository', () => {
+  it('createDocument 同时建节点与正文（原子）', async () => {
+    const node = await db.repos.nodes.createDocument({
+      id: IDs.doc,
+      workspaceId: IDs.workspace,
+      type: 'doc',
+      title: '带正文的文档',
+      ownerId: IDs.user,
+      contentJson: { type: 'doc', content: [{ type: 'paragraph' }] },
+    })
+
+    expect(node.id).toBe(IDs.doc)
+
+    // 关键不变式：doc 节点必有正文行
+    const content = await db.repos.contents.findByNodeId(IDs.doc)
+    expect(content).not.toBeNull()
+    expect(content?.contentSchemaVersion).toBe(1)
+    expect(content?.yjsSchemaVersion).toBe(1)
+  })
+
+  it('createDocument 失败时不留下孤立节点', async () => {
+    // 用一个已存在的 nodeId 制造冲突：节点建不进去，正文也不该建
+    await db.repos.nodes.createDocument({
+      id: IDs.doc,
+      workspaceId: IDs.workspace,
+      type: 'doc',
+      title: '第一个',
+      ownerId: IDs.user,
+      contentJson: { type: 'doc' },
+    })
+
+    await expect(
+      db.repos.nodes.createDocument({
+        id: IDs.doc, // 主键冲突
+        workspaceId: IDs.workspace,
+        type: 'doc',
+        title: '第二个',
+        ownerId: IDs.user,
+        contentJson: { type: 'doc' },
+      }),
+    ).rejects.toThrow()
+
+    // 原节点与正文都还在，且没有被"第二个"覆盖
+    const node = await db.repos.nodes.findById(IDs.doc)
+    expect(node?.title).toBe('第一个')
+  })
+
   it('创建节点时标题归一化', async () => {
     const node = await db.repos.nodes.create({
       id: IDs.doc,

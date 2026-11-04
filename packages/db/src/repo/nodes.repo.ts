@@ -36,6 +36,34 @@ export class NodesRepositoryImpl implements NodesRepository {
     return toNode(row)
   }
 
+  async createDocument(input: CreateNodeInput & { contentJson: unknown }): Promise<TreeNode> {
+    // 节点与正文必须一起成功——否则会留下"打不开的文档"
+    const [row] = await this.prisma.$transaction([
+      this.prisma.node.create({
+        data: {
+          id: input.id,
+          workspaceId: input.workspaceId,
+          parentId: input.parentId ?? null,
+          type: input.type,
+          title: input.title,
+          titleNorm: normalizeTitle(input.title),
+          ownerId: input.ownerId,
+          visibility: input.visibility ?? 'workspace',
+          sortOrder: 0,
+        },
+      }),
+      this.prisma.documentContent.create({
+        data: {
+          nodeId: input.id,
+          contentJson: input.contentJson as never,
+          contentSchemaVersion: 1,
+          yjsSchemaVersion: 1,
+        },
+      }),
+    ])
+    return toNode(row as PrismaNode)
+  }
+
   async update(id: string, input: UpdateNodeInput): Promise<TreeNode> {
     const row = (await this.prisma.node.update({
       where: { id },

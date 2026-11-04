@@ -127,20 +127,30 @@ const CASES = [
   },
   {
     guard: 'scripts/guards/check-test-count.mjs',
-    label: '把测试文件删到低于下限，数量护栏必须失败',
+    label: '把全部测试文件删光，数量护栏必须失败',
     breakIt(dir) {
-      // 删掉大部分测试文件——模拟"测试被悄悄删光"
-      const testDirs = [
-        path.join(dir, 'packages', 'authz', 'src'),
-        path.join(dir, 'packages', 'db', 'test'),
-      ]
-      for (const d of testDirs) {
-        if (!existsSync(d)) continue
-        for (const name of readdirSync(d)) {
-          if (!/\.(test|spec)\./i.test(name)) continue
-          rmSync(path.join(d, name), { force: true })
+      // 递归删掉所有 *.test.ts / *.spec.ts —— 这正是该守卫要防的场景：
+      // 测试被整体删掉后 `vitest run --passWithNoTests` 仍返回 0，CI 全绿。
+      //
+      // 早期版本只删两个目录，结果测试文件总数涨上来之后，删完仍高于阈值，
+      // 守卫不再报警（自检把这个失效抓出来了）。改成"删光"后与阈值无关。
+      const walk = (d) => {
+        let entries
+        try {
+          entries = readdirSync(d, { withFileTypes: true })
+        } catch {
+          return
+        }
+        for (const e of entries) {
+          if (e.name === 'node_modules' || e.name === '.git') continue
+          const full = path.join(d, e.name)
+          if (e.isDirectory()) walk(full)
+          else if (/\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(e.name)) {
+            rmSync(full, { force: true })
+          }
         }
       }
+      walk(dir)
     },
   },
 ]

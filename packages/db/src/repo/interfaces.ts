@@ -159,8 +159,18 @@ export interface WorkspacesRepository {
 export interface NodesRepository {
   findById(id: string): Promise<TreeNode | null>
 
-  /** 创建节点。 */
+  /** 创建节点（不含正文）。文件夹用这个。 */
   create(input: CreateNodeInput): Promise<TreeNode>
+
+  /**
+   * 创建文档/表格节点，并**在同一事务内**建立正文行。
+   *
+   * 为什么必须原子：不变式是"每个 doc/sheet 节点恰有一行正文"。
+   * 若先建节点再建正文，中途失败会留下打不开的文档。
+   *
+   * @param contentJson 初始正文（PM JSON）。通常传空文档结构。
+   */
+  createDocument(input: CreateNodeInput & { contentJson: unknown }): Promise<TreeNode>
 
   /**
    * 更新节点。
@@ -240,6 +250,14 @@ export interface AclRepository {
    * 判定权限时按 user + workspace 两个主体分别查（架构文档 §8.2）。
    */
   listForSubjects(nodeId: string, userId: string, workspaceId: string): Promise<AclEntry[]>
+
+  /**
+   * 批量查询多个节点的相关规则。
+   *
+   * 列表/树查询时用——否则 N 个节点要发 N 次查询。
+   * 返回的条目带 `nodeId`，调用方按节点分组。
+   */
+  listForNodes(nodeIds: string[], userId: string, workspaceId: string): Promise<AclEntry[]>
 
   /** 新增或覆盖一条授权（同一 node+subject 唯一）。 */
   upsert(input: CreateAclInput): Promise<AclEntry>

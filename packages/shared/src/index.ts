@@ -20,25 +20,24 @@ export {
 } from './roles.js'
 export type { Role, WorkspaceRole, AssignableWorkspaceRole } from './roles.js'
 
-/** 节点类型。 */
-export const NODE_TYPES = ['folder', 'doc', 'sheet'] as const
-export type NodeType = (typeof NODE_TYPES)[number]
+// ---------------------------------------------------------------- 领域枚举
 
-/** 节点可见性。 */
-export const VISIBILITIES = ['private', 'workspace'] as const
-export type Visibility = (typeof VISIBILITIES)[number]
-
-/** ACL 主体类型。 */
-export const SUBJECT_TYPES = ['user', 'workspace'] as const
-export type SubjectType = (typeof SUBJECT_TYPES)[number]
-
-/**
- * ACL 生效方式。
- * allow = 授予；deny = 降权，优先于 allow（架构文档 §8.2）。
- * 没有 effect 就无法在空间默认角色为 edit 时把某人单独降为只读。
- */
-export const ACL_EFFECTS = ['allow', 'deny'] as const
-export type AclEffect = (typeof ACL_EFFECTS)[number]
+export {
+  NODE_TYPES,
+  VISIBILITIES,
+  SUBJECT_TYPES,
+  ACL_EFFECTS,
+  VERSION_KINDS,
+  USER_STATUSES,
+} from './enums.js'
+export type {
+  NodeType,
+  Visibility,
+  SubjectType,
+  AclEffect,
+  VersionKind,
+  UserStatus,
+} from './enums.js'
 
 /** 统一错误码。前端按此映射提示文案（架构文档附录 A）。 */
 export const ERROR_CODES = [
@@ -159,3 +158,20 @@ export type {
   WorkspaceView,
   WorkspaceMemberView,
 } from './workspace-contract.js'
+
+// ---------------------------------------------------------------- 节点契约
+
+export {
+  CreatableNodeTypeSchema,
+  NodeTitleSchema,
+  CreateNodeBodySchema,
+  UpdateNodeBodySchema,
+} from './node-contract.js'
+
+export type {
+  CreateNodeBody,
+  UpdateNodeBody,
+  NodeView,
+  TreeNodeView,
+  BreadcrumbItem,
+} from './node-contract.js'

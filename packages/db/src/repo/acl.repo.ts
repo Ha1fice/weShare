@@ -39,6 +39,25 @@ export class AclRepositoryImpl implements AclRepository {
     return rows.map(toAcl)
   }
 
+  async listForNodes(
+    nodeIds: string[],
+    userId: string,
+    workspaceId: string,
+  ): Promise<AclEntry[]> {
+    if (nodeIds.length === 0) return []
+
+    const rows = (await this.prisma.nodeAcl.findMany({
+      where: {
+        nodeId: { in: nodeIds },
+        OR: [
+          { subjectType: 'user', subjectId: userId },
+          { subjectType: 'workspace', subjectId: workspaceId },
+        ],
+      },
+    })) as PrismaAcl[]
+    return rows.map(toAcl)
+  }
+
   async upsert(input: CreateAclInput): Promise<AclEntry> {
     const row = (await this.prisma.nodeAcl.upsert({
       where: {

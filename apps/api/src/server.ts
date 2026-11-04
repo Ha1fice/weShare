@@ -11,8 +11,10 @@ import { loadConfig, type AppConfig } from './config.js'
 import { AppError, toErrorBody } from './http/errors.js'
 import { registerAuthRoutes } from './http/auth-routes.js'
 import { registerWorkspaceRoutes } from './http/workspace-routes.js'
+import { registerNodeRoutes } from './http/node-routes.js'
 import { SessionService } from './domain/session-service.js'
 import { WorkspaceService } from './domain/workspace-service.js'
+import { NodeService } from './domain/node-service.js'
 import { LoginRateLimiter } from './lib/login-rate-limit.js'
 
 export interface ServerDeps {
@@ -61,6 +63,7 @@ export async function buildServer(
     const fastifyError = error as {
       validation?: unknown
       statusCode?: number
+      code?: string
     }
 
     // Fastify 自身的校验/解析错误
@@ -69,10 +72,20 @@ export async function buildServer(
       return reply.status(422).send(toErrorBody('VALIDATION_FAILED', '请求参数不合法', requestId))
     }
 
-    if (fastifyError.statusCode === 413) {
-      return reply
-        .status(413)
-        .send(toErrorBody('PAYLOAD_TOO_LARGE', '请求体过大', requestId))
+    // Fastify 抛出的 4xx（如 JSON 解析失败、请求体为空、URL 参数非法）
+    // 必须原样透传状态码——统统转成 500 会污染错误指标，
+    // 也会让客户端以为是服务端挂了而盲目重试。
+    const status = fastifyError.statusCode
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      req.log.info({ err: error, requestId, status }, '客户端请求不合法')
+
+      const code: ErrorCode =
+        status === 404 ? 'NOT_FOUND' : status === 413 ? 'PAYLOAD_TOO_LARGE' : 'VALIDATION_FAILED'
+
+      const message =
+        status === 413 ? '请求体过大' : status === 404 ? '资源不存在' : '请求格式不合法'
+
+      return reply.status(status).send(toErrorBody(code, message, requestId))
     }
 
     // 未知错误：不把细节返回给客户端
@@ -119,6 +132,15 @@ export async function buildServer(
   registerWorkspaceRoutes(app, {
     repos,
     workspaces: workspaceService,
+    sessions,
+    secureCookie: config.SECURE_COOKIE,
+  })
+
+  // 节点路由
+  const nodeService = new NodeService({ repos })
+  registerNodeRoutes(app, {
+    repos,
+    nodes: nodeService,
     sessions,
     secureCookie: config.SECURE_COOKIE,
   })

@@ -12,28 +12,28 @@
 
 // ---------------------------------------------------------------- 通用
 
-/** 用户账号状态。 */
-export type UserStatus = 'active' | 'disabled'
+/**
+ * 领域枚举一律从 @weshare/shared 取——**这里不再重复定义**。
+ *
+ * 之前 db 包自己定义了一份（NodeType / Visibility / SubjectType / ...），
+ * 与 shared 的重复；改一处漏一处就会不一致。现在只有 shared/src/enums.ts
+ * 一处真源。
+ */
+import type {
+  AclEffect,
+  NodeType,
+  SubjectType,
+  UserStatus,
+  VersionKind,
+  Visibility,
+} from '@weshare/shared'
 
-/** 空间成员角色。 */
-export type { WorkspaceRole } from '@weshare/shared'
+export type { AclEffect, NodeType, SubjectType, UserStatus, VersionKind, WorkspaceRole } from '@weshare/shared'
+
+/** 节点可见性。db 包的领域名沿用 `NodeVisibility`，语义等同 shared 的 `Visibility`。 */
+export type NodeVisibility = Visibility
 
 import type { WorkspaceRole } from '@weshare/shared'
-
-/** 节点类型。 */
-export type NodeType = 'folder' | 'doc' | 'sheet'
-
-/** 节点可见性。 */
-export type NodeVisibility = 'private' | 'workspace'
-
-/** ACL 主体类型。 */
-export type SubjectType = 'user' | 'workspace'
-
-/** ACL 生效方式。allow=授予，deny=降权（deny 优先）。 */
-export type AclEffect = 'allow' | 'deny'
-
-/** 版本类型。 */
-export type VersionKind = 'auto' | 'manual' | 'restore'
 
 // ---------------------------------------------------------------- 用户与会话
 
