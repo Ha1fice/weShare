@@ -96,3 +96,16 @@ export const PasswordSchema = z
   .string()
   .min(PASSWORD_MIN_LENGTH, `密码至少需要 ${PASSWORD_MIN_LENGTH} 个字符`)
   .max(PASSWORD_MAX_LENGTH, `密码不能超过 ${PASSWORD_MAX_LENGTH} 个字符`)
+
+/**
+ * Argon2id 参数（OWASP 2025 最低配置）。
+ *
+ * 放在 shared 是为了让 api 的密码哈希与 db 的 seed 脚本**用同一组参数**——
+ * 之前 seed 自己写了一套 scrypt 参数，切换算法后 seed 建的账号直接登不进去
+ * （argon2.verify 解析不了 scrypt 串）。
+ */
+export const ARGON2_PARAMS = {
+  memoryCost: 19456,
+  timeCost: 2,
+  parallelism: 1,
+} as const

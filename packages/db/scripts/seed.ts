@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { createPrismaClient, disconnectPrisma } from '../src/client.js'
 import { createRepositories } from '../src/repo/index.js'
+import { ARGON2_PARAMS } from '@weshare/shared'
 import { migrate } from './migrate.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -20,28 +21,18 @@ const PKG_ROOT = path.resolve(HERE, '..')
 
 /** 示例管理员。密码仅用于本地开发，生产环境必须改掉。 */
 const ADMIN_EMAIL = 'admin@weshare.local'
-const ADMIN_PASSWORD = 'admin12345'
+const ADMIN_PASSWORD = 'weshare-admin-2026'
 
 /**
- * scrypt 密码哈希。
+ * 密码哈希（Argon2id）。
  *
- * 格式：scrypt$N$r$p$salt$hash
- * 参数 N=2^15（32768）——OWASP 推荐的 scrypt 最低配置。
+ * **必须与 apps/api 用同一算法与参数**——否则 seed 建的账号登不进去
+ * （argon2.verify 解析不了 scrypt 串，登录会静默失败）。
+ * 参数来自 @weshare/shared 的 ARGON2_PARAMS，单一真源。
  */
 async function hashPassword(password: string): Promise<string> {
-  const { scrypt, randomBytes } = await import('node:crypto')
-  const N = 32768
-  const r = 8
-  const p = 1
-  const keylen = 64
-  const salt = randomBytes(16)
-  const derived = await new Promise<Buffer>((resolve, reject) => {
-    scrypt(password, salt, keylen, { N, r, p, maxmem: 128 * N * r * 2 }, (err, key) => {
-      if (err) reject(err)
-      else resolve(key)
-    })
-  })
-  return `scrypt$${N}$${r}$${p}$${salt.toString('base64')}$${derived.toString('base64')}`
+  const { default: argon2 } = await import('argon2')
+  return argon2.hash(password, { type: argon2.argon2id, ...ARGON2_PARAMS })
 }
 
 async function main(): Promise<void> {

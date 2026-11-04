@@ -19,14 +19,12 @@
  */
 
 import argon2 from 'argon2'
-import { normalizePassword } from '@weshare/shared'
+import { ARGON2_PARAMS, normalizePassword } from '@weshare/shared'
 
 /** OWASP 2025 最低配置：19 MiB 内存、2 轮、并行度 1。 */
 export const ARGON2_OPTIONS = {
   type: argon2.argon2id,
-  memoryCost: 19456,
-  timeCost: 2,
-  parallelism: 1,
+  ...ARGON2_PARAMS,
 } as const
 
 /**

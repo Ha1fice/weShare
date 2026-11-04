@@ -112,6 +112,7 @@ export {
   PASSWORD_MIN_LENGTH,
   PASSWORD_MAX_LENGTH,
   PASSWORD_NORMALIZATION,
+  ARGON2_PARAMS,
   normalizePassword,
   checkPasswordPolicy,
   passwordPolicyMessage,
