@@ -10,7 +10,9 @@ import { createDbHandle, type DbHandle, type Repositories } from '@weshare/db'
 import { loadConfig, type AppConfig } from './config.js'
 import { AppError, toErrorBody } from './http/errors.js'
 import { registerAuthRoutes } from './http/auth-routes.js'
+import { registerWorkspaceRoutes } from './http/workspace-routes.js'
 import { SessionService } from './domain/session-service.js'
+import { WorkspaceService } from './domain/workspace-service.js'
 import { LoginRateLimiter } from './lib/login-rate-limit.js'
 
 export interface ServerDeps {
@@ -110,6 +112,15 @@ export async function buildServer(
     secureCookie: config.SECURE_COOKIE,
     sessionMaxAgeSeconds: config.SESSION_TTL_DAYS * 24 * 60 * 60,
     allowRegister: config.ALLOW_REGISTER,
+  })
+
+  // 空间与成员路由
+  const workspaceService = new WorkspaceService({ repos })
+  registerWorkspaceRoutes(app, {
+    repos,
+    workspaces: workspaceService,
+    sessions,
+    secureCookie: config.SECURE_COOKIE,
   })
 
   // 进程退出前关闭数据库连接

@@ -28,8 +28,15 @@ import process from 'node:process'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** 测试文件数量的下限。 */
-const MIN_TEST_FILES = 8
+/**
+ * 测试文件数量的下限。
+ *
+ * 当前实际 17 个。这个下限留了余量：新增测试 → 数量上升，通过；
+ * 合并测试文件 → 略降但仍 ≥ 下限，通过；**意外删光或大幅删减 → 失败**。
+ *
+ * 调整这个数字时要连带更新 selfcheck.mjs 里的破坏用例。
+ */
+const MIN_TEST_FILES = 12
 
 const SKIP_DIRS = new Set([
   'node_modules',

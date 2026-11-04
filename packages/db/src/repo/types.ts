@@ -16,7 +16,9 @@
 export type UserStatus = 'active' | 'disabled'
 
 /** 空间成员角色。 */
-export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'viewer'
+export type { WorkspaceRole } from '@weshare/shared'
+
+import type { WorkspaceRole } from '@weshare/shared'
 
 /** 节点类型。 */
 export type NodeType = 'folder' | 'doc' | 'sheet'

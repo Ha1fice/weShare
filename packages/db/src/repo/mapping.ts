@@ -9,6 +9,7 @@
  *   不得出现在任何导出签名里。
  */
 
+import type { WorkspaceRole } from '@weshare/shared'
 import type {
   AclEntry,
   Attachment,
@@ -19,7 +20,6 @@ import type {
   Version,
   Workspace,
   WorkspaceMember,
-  WorkspaceRole,
 } from './types.js'
 
 // ---------------------------------------------------------------- Prisma 行类型

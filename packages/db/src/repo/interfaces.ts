@@ -12,6 +12,7 @@
  *      不让 Service 层跨 Repository 拼事务（那会导致事务边界失控）。
  */
 
+import type { WorkspaceRole } from '@weshare/shared'
 import type {
   AclEntry,
   AuthRecord,
@@ -31,7 +32,6 @@ import type {
   Version,
   Workspace,
   WorkspaceMember,
-  WorkspaceRole,
 } from './types.js'
 
 /**

@@ -5,40 +5,20 @@
  * 两边用的是同一份角色枚举与错误码（架构文档 §10 关键点）。
  */
 
-/** 文档级角色。顺序即权限高低，用于 max/min 比较（架构文档 §8.2）。 */
-export const ROLES = ['view', 'comment', 'edit', 'manage'] as const
-export type Role = (typeof ROLES)[number]
+// ---------------------------------------------------------------- 角色
 
-/** 角色权重。higher 表示权限更高。 */
-export const ROLE_RANK: Record<Role, number> = {
-  view: 0,
-  comment: 1,
-  edit: 2,
-  manage: 3,
-}
-
-/** 取两个角色中权限更高的一个。null 视为"无"。 */
-export function maxRole(a: Role | null, b: Role | null): Role | null {
-  if (a === null) return b
-  if (b === null) return a
-  return ROLE_RANK[a] >= ROLE_RANK[b] ? a : b
-}
-
-/** 取两个角色中权限更低的一个。null 视为"无"。 */
-export function minRole(a: Role | null, b: Role | null): Role | null {
-  if (a === null) return b
-  if (b === null) return a
-  return ROLE_RANK[a] <= ROLE_RANK[b] ? a : b
-}
-
-/** 角色是否达到所需能力。 */
-export function roleAtLeast(actual: Role | null, required: Role): boolean {
-  return actual !== null && ROLE_RANK[actual] >= ROLE_RANK[required]
-}
-
-/** 空间成员角色。 */
-export const WORKSPACE_ROLES = ['owner', 'admin', 'member', 'viewer'] as const
-export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number]
+export {
+  ROLES,
+  ROLE_RANK,
+  maxRole,
+  minRole,
+  roleAtLeast,
+  WORKSPACE_ROLES,
+  ASSIGNABLE_WORKSPACE_ROLES,
+  canManageMembers,
+  canManageWorkspaceSettings,
+} from './roles.js'
+export type { Role, WorkspaceRole, AssignableWorkspaceRole } from './roles.js'
 
 /** 节点类型。 */
 export const NODE_TYPES = ['folder', 'doc', 'sheet'] as const
@@ -158,3 +138,24 @@ export type {
   MeResponse,
   AuthResponse,
 } from './auth-contract.js'
+
+// ---------------------------------------------------------------- 空间与成员契约
+
+export {
+  WorkspaceNameSchema,
+  WorkspaceDefaultRoleSchema,
+  AssignableMemberRoleSchema,
+  CreateWorkspaceBodySchema,
+  UpdateWorkspaceBodySchema,
+  AddMemberBodySchema,
+  UpdateMemberBodySchema,
+} from './workspace-contract.js'
+
+export type {
+  CreateWorkspaceBody,
+  UpdateWorkspaceBody,
+  AddMemberBody,
+  UpdateMemberBody,
+  WorkspaceView,
+  WorkspaceMemberView,
+} from './workspace-contract.js'

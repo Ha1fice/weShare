@@ -224,13 +224,15 @@ for (const l of lines) {
 const secRefRe = /§\s*(\d+(?:\.\d+)*)/g
 while ((m = secRefRe.exec(raw)) !== null) {
   const ref = m[1]
-  // 只校验带小数点的章节引用，纯数字（§12）也校验
   if (!headingSet.has(ref)) {
     problems.push({
       what: `章节引用 §${ref}`,
       declared: `§${ref}`,
       actual: '该章节不存在',
-      hint: '引用指向不存在的章节，读者点过去只会迷路',
+      hint:
+        '引用指向不存在的章节，读者点过去只会迷路。' +
+        '若这是外部标准，改用全称（如 "NIST SP 800-63B-4 第 3.1.1.2 节"）——' +
+        '§ 只用于本文档内部引用（见 §18.1）',
     })
   }
 }

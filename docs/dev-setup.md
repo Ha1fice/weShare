@@ -57,6 +57,35 @@ pnpm dev
 
 **DB_PATH 相对于仓库根**，不是相对于启动目录——从哪个目录启动 api 都会连到同一个库。
 
+## 空间与成员
+
+| 操作             | 说明                                             |
+| ---------------- | ------------------------------------------------ |
+| 我的空间         | `GET /api/v1/workspaces` — 含我在其中的角色       |
+| 创建空间         | `POST /api/v1/workspaces` — 创建者自动成为 owner  |
+| 空间详情         | `GET /api/v1/workspaces/:id`                      |
+| 改名 / 默认角色  | `PATCH /api/v1/workspaces/:id` — **仅 owner**       |
+| 成员列表         | `GET /api/v1/workspaces/:id/members`              |
+| 添加成员         | `POST /api/v1/workspaces/:id/members` — owner/admin |
+| 改成员角色       | `PATCH /api/v1/workspaces/:id/members/:userId`     |
+| 移除成员         | `DELETE /api/v1/workspaces/:id/members/:userId`    |
+
+**权限边界**（服务端强制，详见架构文档 §8.1.1）：
+
+| 操作         | owner | admin | member | viewer | 非成员 |
+| ------------ | ----- | ----- | ------ | ------ | ------ |
+| 查看详情/成员 | ✅    | ✅    | ✅     | ✅     | 404    |
+| 管理成员     | ✅    | ✅    | ❌     | ❌     | 404    |
+| 改空间设置   | ✅    | ❌    | ❌     | ❌     | 404    |
+
+三条容易踩的硬边界：
+
+- **非成员返回 404 而不是 403** —— 403 会泄露"该空间存在"。
+- **owner 不能通过接口设置、不能被改角色、不能被移除** —— 否则 admin 可以先把 owner 降级再自己升上去（实质提权），或者让空间失去所有者。
+- **admin 不能改空间设置** —— 空间名与默认角色影响全体成员的访问范围，属于 owner 的独占决策。
+
+**添加成员时不能设 `owner` 角色**（接口会返回 422）——可指派角色只有 `admin` / `member` / `viewer`。
+
 ## 端口冲突怎么办
 
 改端口用环境变量，不要直接改代码：
