@@ -205,9 +205,9 @@ async function onLogout(): Promise<void> {
     </header>
 
     <div class="flex min-h-0 flex-1">
-      <!-- 左：目录树 -->
-      <aside class="w-64 shrink-0 overflow-auto border-r border-gray-200 bg-gray-50/60 p-2">
-        <div class="mb-2 flex gap-1 px-1">
+      <!-- 左：目录树（flex 列，让树占满剩余高度以支持虚拟滚动） -->
+      <aside class="flex w-64 shrink-0 flex-col border-r border-gray-200 bg-gray-50/60 p-2">
+        <div class="mb-2 flex shrink-0 gap-1 px-1">
           <button
             type="button"
             class="flex-1 rounded bg-white px-2 py-1 text-xs text-gray-700 shadow-sm hover:bg-gray-100 disabled:opacity-40"
@@ -226,16 +226,18 @@ async function onLogout(): Promise<void> {
           </button>
         </div>
 
-        <NodeTree
-          v-model:selected="selected"
-          v-model:expanded="expanded"
-          :nodes="nodes"
-          :dragging-id="draggingId"
-          multiple
-          @move="onMove"
-          @drag-start="(id) => (draggingId = id)"
-          @drag-end="draggingId = null"
-        />
+        <div class="min-h-0 flex-1">
+          <NodeTree
+            v-model:selected="selected"
+            v-model:expanded="expanded"
+            :nodes="nodes"
+            :dragging-id="draggingId"
+            multiple
+            @move="onMove"
+            @drag-start="(id) => (draggingId = id)"
+            @drag-end="draggingId = null"
+          />
+        </div>
       </aside>
 
       <!-- 右：面包屑 + 列表 -->

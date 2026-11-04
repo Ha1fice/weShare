@@ -2,17 +2,25 @@
 /**
  * 目录树。
  *
- * 用 reka-ui 的 TreeRoot / TreeItem（headless）：
+ * 用 reka-ui 的 TreeRoot / TreeItem / TreeVirtualizer（headless）：
  *   - 展开收起、选择/多选、键盘导航（roving tabindex、方向键、type-ahead）
  *     都由组件提供，ARIA 属性也是它写的；
+ *   - 行数超过阈值时用 TreeVirtualizer 只渲染可视区域；
  *   - 我们只负责数据整形、样式与拖放。
  *
  * 拖放用 HTML5 原生 DnD：本场景只需"拖到某个文件夹上 = 移动"，
  * 不涉及自由排序，没必要为此引入拖拽库。
  */
 import { computed } from 'vue'
-import { TreeItem, TreeRoot } from 'reka-ui'
+import { TreeRoot, TreeVirtualizer } from 'reka-ui'
 import type { TreeNodeItem } from '@/api/nodes.js'
+import NodeTreeRow from './NodeTreeRow.vue'
+
+/** 行高（px）。与 NodeTreeRow 里 py-1.5 + text-sm 对应；估小了滚动条会跳。 */
+const ROW_HEIGHT = 32
+
+/** 超过这个行数才启用虚拟滚动。少量节点直接渲染，无障碍树完整、也便于测试。 */
+const VIRTUAL_THRESHOLD = 200
 
 /** 树上的节点（带子节点，供 reka-ui 递归）。 */
 export interface UiTreeNode {
@@ -107,6 +115,12 @@ function onSelectionChange(value: unknown): void {
   )
 }
 
+/** 是否启用虚拟滚动。 */
+const useVirtual = computed(() => props.nodes.length > VIRTUAL_THRESHOLD)
+
+/** 虚拟滚动时供 type-ahead 用的文本（TreeVirtualizer 是非泛型组件）。 */
+const textContentOf = (item: Record<string, unknown>) => String((item as { title?: string }).title ?? '')
+
 /** 只有文件夹能作为放置目标。 */
 function canDrop(target: UiTreeNode): boolean {
   return target.type === 'folder' && props.draggingId !== null && props.draggingId !== target.id
@@ -145,20 +159,14 @@ function onDropToRoot(ev: DragEvent): void {
   emit('drag-end')
 }
 
-/** 图标：文件夹 / 文档。 */
-function iconOf(node: UiTreeNode): string {
-  return node.type === 'folder' ? '📁' : '📄'
-}
-
-/** 只读用户不能拖也不能被放入。 */
+/** 只读用户不能拖。 */
 function draggableOf(node: UiTreeNode): boolean {
   return node.role !== 'view'
 }
 </script>
 
 <template>
-  <div class="min-h-full" @dragover.prevent @drop="onDropToRoot">
-    <!-- 空白区域也接受 drop（移到根级）。外层容器设 min-h 保证有可放置空间。 -->
+  <div class="h-full" @dragover.prevent @drop="onDropToRoot">
     <TreeRoot
       :model-value="multiple ? selectedItems : selectedItems[0]"
       :items="tree"
@@ -167,49 +175,54 @@ function draggableOf(node: UiTreeNode): boolean {
       :expanded="expanded"
       :multiple="multiple"
       selection-behavior="toggle"
-      class="select-none text-sm"
+      class="h-full select-none overflow-auto text-sm"
       @update:model-value="onSelectionChange"
       @update:expanded="(v: string[]) => emit('update:expanded', v)"
     >
       <template #default="{ flattenItems }">
-        <TreeItem
-          v-for="item in flattenItems"
-          :key="getKey(item.value)"
-          :value="item.value"
-          :level="item.level"
-          :style="{ paddingLeft: `${8 + item.level * 16}px` }"
-          class="flex cursor-pointer items-center gap-1.5 rounded px-2 py-1.5 outline-none hover:bg-gray-100 data-[selected]:bg-blue-50 data-[selected]:text-blue-700 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50"
-          :draggable="draggableOf(item.value)"
-          @dragstart="onDragStart(item.value, $event)"
-          @dragend="emit('drag-end')"
-          @dragover="onDragOver(item.value, $event)"
-          @drop.stop="onDrop(item.value, $event)"
+        <!--
+          虚拟滚动：行数超过阈值时只渲染可视区域。
+          TreeVirtualizer 以父元素（下面这个 role=tree 的元素）为滚动容器，
+          所以滚动能力挂在 TreeRoot 上，而不是外层 div。
+        -->
+        <TreeVirtualizer
+          v-if="useVirtual"
+          :estimate-size="ROW_HEIGHT"
+          :overscan="10"
+          :text-content="textContentOf"
         >
-          <template #default="{ isExpanded }">
-            <!-- 展开箭头：有子节点才显示 -->
-            <span
-              v-if="item.value.hasChildren"
-              class="inline-flex h-4 w-4 shrink-0 items-center justify-center text-xs text-gray-400"
-            >
-              {{ isExpanded ? '▾' : '▸' }}
-            </span>
-            <span v-else class="inline-block h-4 w-4 shrink-0" />
-
-            <span class="shrink-0">{{ iconOf(item.value) }}</span>
-            <span class="truncate">{{ item.value.title || '未命名' }}</span>
-
-            <!-- 只读标记：让用户知道为什么不能拖 -->
-            <span v-if="item.value.role === 'view'" class="ml-auto shrink-0 text-xs text-gray-400">
-              只读
-            </span>
+          <template #default="{ item }">
+            <NodeTreeRow
+              :node="item.value as UiTreeNode"
+              :level="item.level"
+              :draggable="draggableOf(item.value as UiTreeNode)"
+              @dragstart="onDragStart"
+              @dragend="emit('drag-end')"
+              @dragover="onDragOver"
+              @drop="onDrop"
+            />
           </template>
-        </TreeItem>
+        </TreeVirtualizer>
+
+        <!-- 少量节点：直接渲染，无障碍树完整、也便于测试 -->
+        <template v-else>
+          <NodeTreeRow
+            v-for="item in flattenItems"
+            :key="getKey(item.value)"
+            :node="item.value"
+            :level="item.level"
+            :draggable="draggableOf(item.value)"
+            @dragstart="onDragStart"
+            @dragend="emit('drag-end')"
+            @dragover="onDragOver"
+            @drop="onDrop"
+          />
+        </template>
       </template>
     </TreeRoot>
 
-    <!-- 空态 -->
     <p v-if="tree.length === 0" class="px-4 py-8 text-center text-sm text-gray-400">
-      还没有内容。右键或点击上方按钮新建。
+      还没有内容。点击上方按钮新建。
     </p>
   </div>
 </template>

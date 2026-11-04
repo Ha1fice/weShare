@@ -132,3 +132,28 @@ describe('NodeTree', () => {
     expect(el.attributes('draggable')).toBe('false')
   })
 })
+
+describe('NodeTree 虚拟滚动', () => {
+  /** 造 n 个根级节点。 */
+  function manyNodes(n: number): TreeNodeItem[] {
+    return Array.from({ length: n }, (_, i) =>
+      node({ id: `n${i}`, title: `节点 ${i}` }),
+    )
+  }
+
+  it('节点数超过阈值时启用虚拟滚动容器', () => {
+    const wrapper = mountTree(manyNodes(250))
+    // TreeVirtualizer 渲染的容器带 data-reka-virtualizer
+    expect(wrapper.find('[data-reka-virtualizer]').exists()).toBe(true)
+  })
+
+  it('节点数低于阈值时不启用虚拟滚动（完整渲染便于无障碍与测试）', () => {
+    const wrapper = mountTree(manyNodes(50))
+    expect(wrapper.find('[data-reka-virtualizer]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="treeitem"]').length).toBe(50)
+  })
+
+  it('虚拟滚动模式下挂载不报错', () => {
+    expect(() => mountTree(manyNodes(500))).not.toThrow()
+  })
+})
