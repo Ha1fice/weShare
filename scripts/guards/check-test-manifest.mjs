@@ -75,6 +75,13 @@ for (const p of pkgFiles) {
       rel: path.relative(ROOT, p).replace(/\\/g, '/'),
       testScript: json.scripts?.test ?? null,
     })
+    // e2e 是独立运行器（playwright），与 test 互补而非替代——一起算进覆盖面
+    if (json.scripts?.e2e) {
+      manifests.push({
+      rel: path.relative(ROOT, p).replace(/\\/g, '/'),
+        testScript: json.scripts.e2e,
+      })
+    }
   } catch {
     /* 解析失败忽略，由 lint 负责 */
   }
@@ -107,7 +114,7 @@ if (testFiles.length === 0) {
  * 因此这里返回包根目录，判定时用"文件是否在该包目录内"来过滤。
  */
 function autoDiscoveryIncludes(script, pkgDir) {
-  const runners = /\b(vitest|jest)\b/
+  const runners = /\b(vitest|jest|playwright)\b/
   if (!runners.test(script)) return null
 
   // 读配置文件里的 include 模式
@@ -117,6 +124,7 @@ function autoDiscoveryIncludes(script, pkgDir) {
     'vitest.config.mts',
     'jest.config.js',
     'jest.config.ts',
+    'playwright.config.ts',
   ]
   for (const name of configCandidates) {
     const p = path.join(pkgDir, name)
@@ -126,6 +134,12 @@ function autoDiscoveryIncludes(script, pkgDir) {
       text = readFileSync(p, 'utf8')
     } catch {
       continue
+    }
+    if (name === 'playwright.config.ts') {
+      // playwright 没有 include 数组，用 testDir（默认 'e2e'）圈定收集范围
+      const d = text.match(/testDir:\s*['"]([^'"]+)['"]/)
+      const dir = d?.[1] ?? 'e2e'
+      return { patterns: [dir + '/**'], config: name, pkgDir }
     }
     const m = text.match(/include:\s*\[([^\]]*)\]/s)
     if (!m) {
