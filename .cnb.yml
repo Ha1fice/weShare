@@ -20,9 +20,6 @@ main:
         image: node:22
         volumes:
           - /root/.cache/ms-playwright:copy-on-write
-        volumes:
-          # 缓存 playwright 浏览器（约 170MB）：首次下载，后续命中节点缓存
-          - /root/.cache/ms-playwright:copy-on-write
       stages:
         - name: 准备 pnpm
           script:
