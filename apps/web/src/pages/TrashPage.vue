@@ -38,15 +38,10 @@ const nodes = ref<TreeNodeItem[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 
-/** 统一错误文案：服务端错误用 shared 映射，网络错误给可读提示。 */
+/** 统一错误文案：shared 的 errorMessage 已收 NETWORK_ERROR，直接透传。 */
 function messageOf(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.network) return '网络异常，请稍后重试'
-    // err.code 已收窄为服务端错误码（network=false 时不会是 NETWORK_ERROR）
-    return formatErrorMessage({
-      code: err.code,
-      message: err.message,
-    } as Parameters<typeof formatErrorMessage>[0])
+    return formatErrorMessage({ code: err.code, message: err.message })
   }
   return '操作失败，请稍后重试'
 }

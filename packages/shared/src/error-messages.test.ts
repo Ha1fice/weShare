@@ -19,6 +19,13 @@ describe('ERROR_MESSAGES', () => {
     }
   })
 
+  it('errorMessage：NETWORK_ERROR 强制兜底，不透传网络层诊断信息', () => {
+    expect(errorMessage({ code: 'NETWORK_ERROR' })).toBe(ERROR_MESSAGES.INTERNAL_ERROR)
+    expect(errorMessage({ code: 'NETWORK_ERROR', message: 'Failed to fetch (diagnostic)' })).toBe(
+      ERROR_MESSAGES.INTERNAL_ERROR,
+    )
+  })
+
   it('errorMessage：有 message 用 message，空/缺失用兜底', () => {
     expect(errorMessage({ code: 'FORBIDDEN', message: '仅空间所有者或管理员可彻底删除' })).toBe(
       '仅空间所有者或管理员可彻底删除',

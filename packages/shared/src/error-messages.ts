@@ -24,11 +24,15 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
 /**
  * 取展示文案：非空 message 优先，否则按错误码兜底。
  *
- * 5xx（服务端内部错误）的 message 通常是诊断信息而非用户文案，
- * 统一走兜底；4xx 信任后端 message。
+ * code 收 `ErrorCode | 'NETWORK_ERROR'`：前端 ApiError 的 code 就是这个联合
+ * （网络层失败没有服务端错误码），收进来调用方就不用 as 硬压类型。
+ * NETWORK_ERROR 与 5xx 一样强制走兜底——网络层的 message 是 fetch 诊断信息，
+ * 不是用户文案。
  */
-export function errorMessage(err: { code: ErrorCode; message?: string }): string {
-  if (err.code === 'INTERNAL_ERROR') return ERROR_MESSAGES.INTERNAL_ERROR
+export function errorMessage(err: { code: ErrorCode | 'NETWORK_ERROR'; message?: string }): string {
+  if (err.code === 'INTERNAL_ERROR' || err.code === 'NETWORK_ERROR') {
+    return ERROR_MESSAGES.INTERNAL_ERROR
+  }
   const message = err.message?.trim()
   return message || ERROR_MESSAGES[err.code]
 }
