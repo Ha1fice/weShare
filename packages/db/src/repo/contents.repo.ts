@@ -78,58 +78,55 @@ export class ContentsRepositoryImpl implements ContentsRepository {
   }
 
   /**
-   * 协同落库。
+   * 协同落库（**无条件**）。
    *
-   * 带一个**条件**：只有 `yjsState` 仍为 NULL 时才写。
-   * 这是 Phase 2→3 迁移桥的跨进程安全网（架构文档 §13 R16）：
-   * 两个进程同时首次打开同一文档时，谁先写谁赢，后到的那个 updateMany
-   * 影响 0 行，调用方据此知道"别人先迁移了"，应丢弃自己的迁移结果。
+   * 这个方法是协同的**事实源写入**，不能带任何"只在某条件下才写"的门槛。
+   *
+   * 曾经的实现用 `updateMany({ where: { nodeId, yjsState: null } })` 做
+   * "抢占迁移权"，结果是：抢到之后后续每一次落库都被那个 `where` 挡掉，
+   * 只影响 0 行——**用户协同时写的所有内容根本没进数据库**，而调用方还
+   * 以为存成功了。这类"静默不写"比报错危险得多。
+   *
+   * 迁移权之争（两个进程同时首次打开同一文档）用 CAS 解决：
+   * `expectYjsState: 'null'` 时，只有当前仍为空才写；没命中返回
+   * `claimed: false`，调用方据此丢弃自己的迁移副本。
+   *
+   * 两种语义合并成一个方法：写什么完全一样，只有"允不允许写"不同。
+   * 拆开时两边的 data 对象是手抄的两份，漏字段只是时间问题。
    */
-  async claimCollaborative(input: SaveContentInput): Promise<boolean> {
-    // 显式标注为 Unchecked 变体：updatedBy 是可空的外键，
-    // 交给 TS 推断会在 checked/unchecked 之间产生歧义。
-    const data: PrismaDocumentContentUncheckedUpdateInput = {
-      ...(input.contentJson !== undefined ? { contentJson: input.contentJson as never } : {}),
-      ...(input.yjsState !== undefined
-        ? { yjsState: input.yjsState === null ? null : toBytes(input.yjsState) }
-        : {}),
-      ...(input.stateVector !== undefined
-        ? { stateVector: input.stateVector === null ? null : toBytes(input.stateVector) }
-        : {}),
-      ...(input.textPreview !== undefined ? { textPreview: input.textPreview } : {}),
-      ...(input.charCount !== undefined ? { charCount: input.charCount } : {}),
-      ...(input.docSizeBytes !== undefined ? { docSizeBytes: input.docSizeBytes } : {}),
-      ...(input.updatedBy !== undefined ? { updatedBy: input.updatedBy } : {}),
-      storedAt: new Date(),
-    }
-    const result = await this.prisma.documentContent.updateMany({
-      where: { nodeId: input.nodeId, yjsState: null },
-      data,
-    })
-    return result.count > 0
+  async saveCollaborative(
+    input: SaveContentInput & { expectYjsState?: 'null' | 'any' },
+  ): Promise<{ claimed: boolean }> {
+    const result = (await this.prisma.documentContent.updateMany({
+      where: {
+        nodeId: input.nodeId,
+        ...(input.expectYjsState === 'null' ? { yjsState: null } : {}),
+      },
+      data: collaborativeData(input),
+    })) as { count: number }
+    return { claimed: result.count > 0 }
   }
+}
 
-  async saveCollaborative(input: SaveContentInput): Promise<DocumentContent> {
-    // 显式标注为 Unchecked 变体：updatedBy 是可空的外键，
-    // 交给 TS 推断会在 checked/unchecked 之间产生歧义。
-    const data: PrismaDocumentContentUncheckedUpdateInput = {
-      ...(input.contentJson !== undefined ? { contentJson: input.contentJson as never } : {}),
-      ...(input.yjsState !== undefined
-        ? { yjsState: input.yjsState === null ? null : toBytes(input.yjsState) }
-        : {}),
-      ...(input.stateVector !== undefined
-        ? { stateVector: input.stateVector === null ? null : toBytes(input.stateVector) }
-        : {}),
-      ...(input.textPreview !== undefined ? { textPreview: input.textPreview } : {}),
-      ...(input.charCount !== undefined ? { charCount: input.charCount } : {}),
-      ...(input.docSizeBytes !== undefined ? { docSizeBytes: input.docSizeBytes } : {}),
-      ...(input.updatedBy !== undefined ? { updatedBy: input.updatedBy } : {}),
-      storedAt: new Date(),
-    }
-    const row = (await this.prisma.documentContent.update({
-      where: { nodeId: input.nodeId },
-      data,
-    })) as PrismaContent
-    return toContent(row)
+/**
+ * 协同写入的字段集。
+ *
+ * 显式标注为 Unchecked 变体：`updatedBy` 是可空外键，交给 TS 推断会在
+ * checked/unchecked 之间产生歧义。
+ */
+function collaborativeData(input: SaveContentInput): PrismaDocumentContentUncheckedUpdateInput {
+  return {
+    ...(input.contentJson !== undefined ? { contentJson: input.contentJson as never } : {}),
+    ...(input.yjsState !== undefined
+      ? { yjsState: input.yjsState === null ? null : toBytes(input.yjsState) }
+      : {}),
+    ...(input.stateVector !== undefined
+      ? { stateVector: input.stateVector === null ? null : toBytes(input.stateVector) }
+      : {}),
+    ...(input.textPreview !== undefined ? { textPreview: input.textPreview } : {}),
+    ...(input.charCount !== undefined ? { charCount: input.charCount } : {}),
+    ...(input.docSizeBytes !== undefined ? { docSizeBytes: input.docSizeBytes } : {}),
+    ...(input.updatedBy !== undefined ? { updatedBy: input.updatedBy } : {}),
+    storedAt: new Date(),
   }
 }

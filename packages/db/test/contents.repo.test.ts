@@ -103,7 +103,7 @@ describe('ContentsRepository', () => {
     await db.repos.contents.create({ nodeId: IDs.doc, contentJson: PM_JSON })
 
     const yjsState = new Uint8Array([1, 2, 3, 4])
-    const saved = await db.repos.contents.saveCollaborative({
+    const { claimed } = await db.repos.contents.saveCollaborative({
       nodeId: IDs.doc,
       yjsState,
       stateVector: new Uint8Array([9]),
@@ -111,7 +111,9 @@ describe('ContentsRepository', () => {
       charCount: 4,
       docSizeBytes: 4,
     })
+    const saved = (await db.repos.contents.findByNodeId(IDs.doc))!
 
+    expect(claimed).toBe(true)
     expect(saved.storedAt).not.toBeNull()
     // 协同路径不参与单机乐观锁，不递增 revision
     expect(saved.revision).toBe(0)
@@ -127,11 +129,11 @@ describe('ContentsRepository', () => {
       yjsState: new Uint8Array([1]),
     })
 
-    const cleared = await db.repos.contents.saveCollaborative({
+    await db.repos.contents.saveCollaborative({
       nodeId: IDs.doc,
       yjsState: null,
     })
-    expect(cleared.yjsState).toBeNull()
+    expect((await db.repos.contents.findByNodeId(IDs.doc))!.yjsState).toBeNull()
   })
 
   it('删除节点会级联删除正文', async () => {

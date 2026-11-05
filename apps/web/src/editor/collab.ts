@@ -22,6 +22,51 @@ import { HocuspocusProvider } from '@hocuspocus/provider'
 /** Y.Doc 里正文 fragment 的名字。与服务端 `persistence.ts` 必须一致。 */
 export const PROSEMIRROR_FRAGMENT = 'prosemirror'
 
+/**
+ * 协同草稿：新文档的第一段内容在客户端生成。
+ *
+ * 为什么需要它（不变式 I2 的前置条件）：
+ *
+ * 服务端靠 `yjs_state IS NULL` 判断"这篇还没进协同"。于是**协同没打开过的
+ * 新文档**，REST 落库不会写 `yjs_state`——第一次进文档页时 `collabEnabled`
+ * 仍是 false，前端就会走单机模式，永远迈不进协同。
+ *
+ * 反过来，只要第一次编辑发生在协同模式里，Y.Doc 就会落库，之后
+ * `collabEnabled` 恒为 true。所以唯一要补的是"从没被协同打开过"这一个入口：
+ * 此时说明数据库里没有协同状态，任何本地内容都是最新的，直接把上次
+ * 单机模式留下的正文灌进 Y.Doc 的迁移桥即可。
+ *
+ * 读失败不阻断：最坏结果是这次编辑没带上旧内容，用户会立刻看到并重打一遍。
+ */
+const COLLAB_DRAFT_KEY_PREFIX = 'weshare:collab-draft:'
+
+/** 记下"这篇文档还没进过协同"时的正文，下次打开时交给 Y.Doc。 */
+export function rememberCollabDraft(nodeId: string, doc: unknown): void {
+  try {
+    if (doc && typeof window !== 'undefined' && 'localStorage' in window) {
+      window.localStorage.setItem(
+        `${COLLAB_DRAFT_KEY_PREFIX}${nodeId}`,
+        JSON.stringify(doc),
+      )
+    }
+  } catch {
+    // 隐私模式 / 配额满：协同本身不受影响，只是这次没能带上旧内容
+  }
+}
+
+/** 取出并清掉草稿（一次性：用过就不该再影响下一次装载）。 */
+export function takeCollabDraft(nodeId: string): unknown {
+  try {
+    const key = `${COLLAB_DRAFT_KEY_PREFIX}${nodeId}`
+    const raw = window.localStorage.getItem(key)
+    if (raw === null) return null
+    window.localStorage.removeItem(key)
+    return JSON.parse(raw) as unknown
+  } catch {
+    return null
+  }
+}
+
 export type CollabStatus = 'connecting' | 'connected' | 'disconnected' | 'denied'
 
 export interface CollabHandle {
@@ -33,6 +78,11 @@ export interface CollabHandle {
 
 export interface ConnectOptions {
   nodeId: string
+  /**
+   * 这篇文档还没进过协同（服务端 `collabEnabled === false`）时，把本地正文
+   * 灌进 Y.Doc；`null` 表示没有草稿。见 `rememberCollabDraft` 的说明。
+   */
+  seedDoc?: unknown
   /** 当前用户（用于在线状态里的名字与颜色）。 */
   user: { id: string; displayName: string }
   /** 只读用户不该发本地输入；这里只影响光标广播，写权限由服务端裁定。 */
@@ -106,7 +156,24 @@ export function connectCollab(options: ConnectOptions): CollabHandle {
     })
   }
   if (provider.awareness) broadcastUser()
-  provider.on('synced', broadcastUser)
+
+  // 只在"这篇还没进过协同"时灌内容，而且必须是**首次 synced**：
+  // 太早会和服务端回放打架（本地先有内容 → 迁移桥不触发 → 内容被丢弃）。
+  let seeded = false
+  const seed = () => {
+    if (seeded || options.seedDoc === null || options.seedDoc === undefined) return
+    seeded = true
+    seedFragment(fragment, options.seedDoc)
+  }
+  provider.on('synced', () => {
+    seed()
+    broadcastUser()
+  })
+
+  // 同步环节本身就失败了（服务端拒绝 / 网络断了）：没人会再发 synced。
+  // 不在这里兜住的话，界面永远停在"正在与服务器同步…"——那是最糟的状态：
+  // 用户以为自己在一篇「正在加载」的文档上编辑。
+  provider.on('authenticationFailed', () => options.onStatus('denied'))
 
   return {
     ydoc,
@@ -118,4 +185,36 @@ export function connectCollab(options: ConnectOptions): CollabHandle {
       ydoc.destroy()
     },
   }
+}
+
+/**
+ * 把 PM JSON 灌进 Y.XmlFragment。
+ *
+ * 用 Yjs 直接构造 XML 结构，不引编辑器实例与 y-prosemirror——这里只需要
+ * "把段落和文字放进去"，服务端迁移桥用的是它自己的那份 Schema。
+ */
+export function seedFragment(fragment: Y.XmlFragment, doc: unknown): void {
+  const blocks = (doc as { content?: unknown } | null)?.content
+  if (!Array.isArray(blocks) || fragment.length > 0) return
+
+  fragment.doc?.transact(() => {
+    for (const block of blocks) {
+      const b = block as { type?: string; content?: unknown; text?: unknown }
+      if (typeof b.type !== 'string') continue
+      const el = new Y.XmlElement(b.type)
+      const inline = Array.isArray(b.content) ? b.content : []
+      if (inline.length === 0 && typeof b.text === 'string') {
+        el.insert(0, [new Y.XmlText(b.text)])
+      } else {
+        const children: Array<Y.XmlElement | Y.XmlText> = []
+        for (const child of inline) {
+          const c = child as { type?: string; text?: string }
+          if (typeof c.type === 'string') children.push(new Y.XmlElement(c.type))
+          else if (typeof c.text === 'string') children.push(new Y.XmlText(c.text))
+        }
+        if (children.length > 0) el.insert(0, children)
+      }
+      fragment.insert(fragment.length, [el])
+    }
+  })
 }

@@ -40,7 +40,13 @@ import EditorToolbar from '@/editor/EditorToolbar.vue'
 import SaveStatus from '@/editor/SaveStatus.vue'
 import { Autosave, type AutosaveState, type SaveOutcome } from '@/editor/autosave.js'
 import { buildExtensions, EMPTY_DOC } from '@/editor/schema.js'
-import { connectCollab, type CollabHandle, type CollabStatus } from '@/editor/collab.js'
+import {
+  connectCollab,
+  rememberCollabDraft,
+  takeCollabDraft,
+  type CollabHandle,
+  type CollabStatus,
+} from '@/editor/collab.js'
 import { createCollabEditor, type CollabEditorResult } from '@/editor/useCollabEditor.js'
 import PeerAvatars from '@/editor/PeerAvatars.vue'
 
@@ -68,10 +74,12 @@ const saveState = ref<AutosaveState>({ kind: 'idle' })
 let collab: CollabHandle | null = null
 let collabEditor: CollabEditorResult | null = null
 const collabStatus = ref<CollabStatus | null>(null)
+/** 是否已经尝试过建立协同连接（决定界面显示"协同"还是"单机"那套控件）。 */
+const collabAttempted = ref(false)
 const collabDeniedReason = ref('')
 const peers = ref<Array<{ clientId: number; name: string }>>([])
 /** 协同模式：正文由 Y.Doc 驱动，不再有 REST 自动保存。 */
-const isCollab = computed(() => collab !== null)
+const isCollab = computed(() => collab !== null || collabAttempted.value)
 
 /**
  * 编辑器实例。
@@ -135,11 +143,14 @@ async function doSave(): Promise<SaveOutcome> {
  * 顺序不能反：先连 provider，等 synced，再建编辑器。
  * 反过来会先渲染出空文档再被远端内容覆盖——用户看到的是"内容丢了"。
  */
-async function startCollab(): Promise<void> {
+async function startCollab(options: { seedFromDraft?: boolean } = {}): Promise<void> {
   if (!session.user) return
 
+  collabAttempted.value = true
   collab = connectCollab({
     nodeId: nodeId.value,
+    // 只在"这篇还没进过协同"时把草稿灌进去，否则服务端已有事实源
+    ...(options.seedFromDraft ? { seedDoc: takeCollabDraft(nodeId.value) } : {}),
     user: { id: session.user.id, displayName: session.user.displayName },
     readOnly: !canEdit.value,
     onStatus: (status, detail) => {
@@ -175,6 +186,7 @@ function teardownCollab(): void {
   collabEditor = null
   collab?.destroy()
   collab = null
+  collabAttempted.value = false
   collabStatus.value = null
   collabDeniedReason.value = ''
   peers.value = []
@@ -200,22 +212,23 @@ async function load(): Promise<void> {
     titleDraft.value = detail.node.title
 
     // ---- 分支：这篇文档是否已经进入协同模式 ----
-    if (body.collabEnabled) {
-      // 协同文档：正文事实源是 Y.Doc，不再有任何 REST 自动保存。
-      // 先把单机编辑器拆掉，避免两个编辑器同时挂在页面上。
-      autosave?.dispose()
-      autosave = null
-      editor.value?.destroy()
-      editor.value = null
-      await startCollab()
-    } else if (editor.value) {
-      // 单机模式下的重新装载（"载入最新版本"）
-      // discard 掉待保存内容，否则替换后立刻会把旧内容又写回去。
-      autosave?.discard()
-      editor.value.commands.setContent(asContent(body.doc), { emitUpdate: false })
-      editor.value.setEditable(canEdit.value)
-      autosave?.reset()
+    //
+    // 一次编辑最多被回滚一个防抖窗口；可接受，见 `connectCollab` 里
+    // `rememberCollabDraft` 的说明。
+    if (!body.collabEnabled) {
+      rememberCollabDraft(nodeId.value, body.doc ?? EMPTY_DOC)
     }
+
+    // 一律走协同：正文事实源放在 Y.Doc，单机 REST 写入只是"还没人协同
+    // 打开过"时的过渡态。一次打开之后 `yjs_state` 就非空了，服务端会继续
+    // 拒绝 REST 写入（409 COLLAB_ENABLED），两条路径不会同时生效。
+    //
+    // 先把单机编辑器拆掉，避免两个编辑器同时挂在页面上。
+    autosave?.dispose()
+    autosave = null
+    editor.value?.destroy()
+    editor.value = null
+    await startCollab({ seedFromDraft: !body.collabEnabled })
   } catch (err) {
     loadError.value = err instanceof ApiError ? err.message : '加载失败'
   } finally {
@@ -345,9 +358,9 @@ const conflictDialog = ref(false)
 async function loadLatest(): Promise<void> {
   autosave?.discard()
   conflictDialog.value = false
+  // 协同模式下重连即重新装载：内容来自服务端的 Y.Doc，不用再 setContent
+  teardownCollab()
   await load()
-  editor.value?.commands.setContent(asContent(content.value?.doc), { emitUpdate: false })
-  editor.value?.setEditable(canEdit.value)
   toast('已载入最新版本')
 }
 
@@ -494,7 +507,7 @@ function fmtTime(iso: string): string {
       <div v-else class="flex min-h-0 flex-1 flex-col">
         <AppAlert v-if="isCollab && collabStatus === 'denied'" tone="error" class="m-2">
           无法建立协同连接：{{ collabDeniedReason || '权限不足或会话已失效' }}。
-          你看到的是最后一次同步的内容，刷新页面可重试。
+          若你刚刚改过内容，已尽力写回服务端；刷新页面可重试。
         </AppAlert>
 
         <EditorToolbar v-if="editor" :editor="editor" :editable="canEdit" />
@@ -502,7 +515,7 @@ function fmtTime(iso: string): string {
         <div class="min-h-0 flex-1 overflow-auto scroll-thin">
           <div class="mx-auto w-full max-w-[760px] px-8 py-7">
             <EditorContent v-if="editor" :editor="editor" />
-            <div v-else-if="isCollab" class="flex items-center gap-2 py-10 text-[12.5px] text-muted">
+            <div v-else class="flex items-center gap-2 py-10 text-[12.5px] text-muted">
               <AppIcon name="cloud" :size="14" class="animate-pulse" />正在与服务器同步…
             </div>
           </div>
