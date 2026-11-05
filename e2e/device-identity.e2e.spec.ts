@@ -9,8 +9,8 @@
  *   - api 以 DEVICE_IDENTITY=1 启动（playwright.config 的 webServer 负责）
  *   - vite 以 VITE_DEVICE_IDENTITY=true 启动（同上）
  *
- * 受管环境装不上浏览器时，verify.mjs 的 e2e 步骤会明确跳过并打印原因
- * （不静默变绿），交付报告里改附手动清单。
+ * 受管环境装不上浏览器时，本文件不会被收集执行（playwright.config 把
+ * testDir 指到空目录；verify.mjs 也会点名跳过），交付报告里改附手动清单。
  *
  * 截图口径（e2e/artifacts/ 下的 png 全部由本文件与 welcome-password
  * spec 在运行时落盘，属于可复现产物，不是手工截图）：
