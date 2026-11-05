@@ -7,14 +7,14 @@
 
 | 任务 | 内容 | 状态 |
 | --- | --- | --- |
-| T5.3-S1 | `ERROR_MESSAGES` 错误码→中文文案全量映射 + `errorMessage()` 兜底（5xx 强制兜底，4xx 信任服务端 message）+ 20 项单测 | ✅ |
+| T5.3-S1 | `ERROR_MESSAGES` 错误码→中文文案全量映射 + `errorMessage()` 兜底（5xx 强制兜底，4xx 信任服务端 message）+ 新增 4 项单测 | ✅ |
 | T5.3-S2 | 401 统一跳 `/login?redirect=<fullPath>`（已在登录页不跳，防守卫循环）；登录成功按 redirect 回跳，仅接受站内路径（防开放重定向） | ✅ |
 | T5.3-S3 | 回收站页面：路由 `/w/:workspaceId/trash`（requiresAuth）+ 空间页顶栏入口 + 按 `trashRootId` 聚批（空标题「未命名」兜底）+ 加载/空/错误三态 | ✅ |
 | T5.3-S4 | 回收站操作：整批还原（422 原样提示）、彻底删除 AlertDialog 二次确认（输入批次根标题精确匹配，不匹配禁用）、purge 入口仅 owner/admin 显隐 | ✅ |
 | T5.3-S5 | `docs/acceptance/phase1.md` 手工验收脚本（前置条件 + 6 账号角色矩阵 + 10 节可勾选步骤） | ✅ |
 | T5.3-S6 | 本报告 + 架构文档 §14 状态同步（T4.3/T4.5/T4.6/T5.1/T5.3/T6.1/T6.2/T6.3） | ✅ |
 
-**契约变更（最小）**：`NodeView` 增加可选输出的 `trashRootId: string | null`（软删除批次根，还原按整批）；后端删除/还原/purge 权限与批次语义未改动。
+**契约变更（最小）**：`NodeView` 增加只读必填字段 `trashRootId: string | null`（软删除批次根，还原按整批；非必填是指旧数据由 `toNodeView` 的 `?? null` 兜底，不是可选输出）；后端删除/还原/purge 权限与批次语义未改动。
 
 ## 2. 提交清单
 
@@ -45,7 +45,7 @@
 ✅ 全部通过（11 个步骤）
 ```
 
-**测试分布**：web 5 文件 48 例（含 TrashPage 11 例、session 3 例、LoginPage 14 例）、api 10 文件 197 例、shared 2 文件 20 例。
+**测试分布**：web 5 文件 48 例（含 TrashPage 11 例、session 3 例、LoginPage 14 例）、api 10 文件 197 例、shared 2 文件 20 例。注意 shared 的 20 例中 16 例是既有 password-policy 用例，S1 实际新增 4 例（见上表）；此处为 S6 时点的全量数字，非 S1 单项产出。
 
 **测试数口径说明**：api 侧报告的 197 例是 vitest 实跑数——参数化用例（`it.each`）在运行时展开为多条，故大于静态 `it()` 声明数；按静态声明数口径 api 为 162 例。两者都对，只是口径不同，非虚报。
 
