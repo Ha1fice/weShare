@@ -63,6 +63,8 @@ const myRole = computed(
 )
 /** 彻底删除仅空间 owner/admin（§8.2 第 5 条）；还原只需 manage，服务端已过滤。 */
 const canPurge = computed(() => myRole.value === 'owner' || myRole.value === 'admin')
+/** 是否存在批次根不可见的批次（用于给出整批操作被禁用的原因）。 */
+const hasIncompleteBatch = computed(() => batches.value.some((b) => b.incomplete))
 
 interface TrashBatch {
   rootId: string
@@ -70,6 +72,8 @@ interface TrashBatch {
   count: number
   deletedAt: string
   root: TreeNodeItem
+  /** 批次根不在可见列表里（子项可见、根无权）——整批还原/彻底删除必须禁用。 */
+  incomplete: boolean
 }
 
 /** 按 trashRootId 分组聚批（兜底：无 trashRootId 的旧数据按自身 id 成批）。 */
@@ -83,13 +87,21 @@ const batches = computed<TrashBatch[]>(() => {
   }
   const result: TrashBatch[] = []
   for (const [rootId, list] of byRoot) {
-    const root: TreeNodeItem = list.find((n) => n.id === rootId) ?? list[0]!
+    const root: TreeNodeItem | undefined = list.find((n) => n.id === rootId)
+    // 批次根缺席：还原会 404、purge 只能删掉可见子树，整批操作必须禁用。
+    // 标题取最早删除的可见子项快照；计数如实标注「可见 n 项」，不冒充全批。
+    const head: TreeNodeItem =
+      root ??
+      [...list].sort((a, b) =>
+        (a.deletedAt ?? a.updatedAt).localeCompare(b.deletedAt ?? b.updatedAt),
+      )[0]!
     result.push({
       rootId,
-      title: root.title || '未命名',
+      title: head.title || '未命名',
       count: list.length,
-      deletedAt: root.deletedAt ?? root.updatedAt,
-      root,
+      deletedAt: head.deletedAt ?? head.updatedAt,
+      root: head,
+      incomplete: root === undefined,
     })
   }
   // 按删除时间倒序，最近删的在前
@@ -118,8 +130,9 @@ watch(workspaceId, () => {
   void load()
 })
 
-/** 整批还原。422（上级目录已被删除等）原样提示。 */
+/** 整批还原。批次根不可见时禁用；422（上级目录已被删除等）原样提示。 */
 async function onRestore(batch: TrashBatch): Promise<void> {
+  if (batch.incomplete || restoringId.value !== null) return
   restoringId.value = batch.rootId
   errorMessage.value = ''
   try {
@@ -134,6 +147,7 @@ async function onRestore(batch: TrashBatch): Promise<void> {
 }
 
 function openPurge(batch: TrashBatch): void {
+  if (batch.incomplete || restoringId.value !== null) return
   purgeTarget.value = batch.root
   purgeInput.value = ''
 }
@@ -246,9 +260,13 @@ function backToWorkspace(): void {
             :class="batch.root.type === 'folder' ? 'text-[#c9a24a]' : 'text-faint'"
           />
           <div class="min-w-0 flex-1">
-            <p class="truncate text-[13px] text-ink">{{ batch.title }}</p>
+            <p class="truncate text-[13px] text-ink" :class="batch.incomplete ? 'text-faint' : ''">
+              {{ batch.title }}
+            </p>
             <p class="mt-0.5 text-[11px] text-faint">
-              {{ batch.count }} 项 · 删除于 {{ fmtTime(batch.deletedAt) }}
+              <template v-if="batch.incomplete">可见 {{ batch.count }} 项（部分内容无权查看）·</template>
+              <template v-else>{{ batch.count }} 项 ·</template>
+              删除于 {{ fmtTime(batch.deletedAt) }}
             </p>
           </div>
 
@@ -257,7 +275,7 @@ function backToWorkspace(): void {
             icon="restore"
             data-testid="restore-btn"
             :loading="restoringId === batch.rootId"
-            :disabled="restoringId !== null"
+            :disabled="restoringId !== null || batch.incomplete"
             @click="onRestore(batch)"
           >
             还原
@@ -268,7 +286,7 @@ function backToWorkspace(): void {
             variant="danger-ghost"
             icon="trash"
             data-testid="purge-btn"
-            :disabled="restoringId !== null"
+            :disabled="restoringId !== null || batch.incomplete"
             @click="openPurge(batch)"
           >
             彻底删除
@@ -279,6 +297,16 @@ function backToWorkspace(): void {
       <p v-if="!loading && batches.length > 0 && !canPurge" class="mt-3 text-[11.5px] text-faint">
         彻底删除仅空间所有者与管理员可用。
       </p>
+      <AppAlert
+        v-if="!loading && hasIncompleteBatch"
+        tone="warning"
+        data-testid="incomplete-batch-alert"
+        class="mt-3"
+      >
+        <span data-testid="incomplete-batch-hint">
+          该批次的部分内容你无权查看，无法整批还原或彻底删除；已标注的项数只是可见部分，不代表整批。
+        </span>
+      </AppAlert>
     </main>
 
     <!-- 彻底删除：要求手打批次根标题 -->

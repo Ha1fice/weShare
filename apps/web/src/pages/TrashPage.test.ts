@@ -14,6 +14,7 @@ import { useSessionStore } from '@/stores/session.js'
  * - 权限显隐：非 manage 角色（服务端直接不返回数据）没有操作入口
  * - 还原：调 restore 接口；422 时原样提示错误信息
  * - 彻底删除：二次确认（需输入批次根标题精确匹配）；仅 owner/admin 可见
+ * - 批次根不可见（子项可见、根无权）：整批还原/彻底删除禁用，计数如实标注
  */
 
 const WS_ID = 'w1'
@@ -342,6 +343,75 @@ describe('回收站页面', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="trash-empty"]').exists()).toBe(true)
+  })
+
+  it('批次根不可见：整批还原与彻底删除禁用，计数如实标注', async () => {
+    // 批次根 f1 对当前用户无 manage（服务端不返回），只返回可见子项
+    const calls = stubApi(trashHandler([
+      item({ id: 'd1', title: '子文档甲', parentId: 'f1', trashRootId: 'f1' }),
+      item({ id: 'd2', title: '子文档乙', parentId: 'f1', trashRootId: 'f1' }),
+    ]))
+    const wrapper = await mountPage()
+    await flushPromises()
+
+    const batches = wrapper.findAll('[data-testid="trash-batch"]')
+    expect(batches).toHaveLength(1)
+    // 计数不冒充全批：只说可见 2 项
+    expect(batches[0]!.text()).toContain('可见 2 项')
+    expect(batches[0]!.text()).not.toContain('2 项 ·')
+
+    // 两个整批操作按钮都禁用——点了必失败（restore 404 / purge 只删部分）的按钮不能留着
+    const restoreBtn = batches[0]!.find('[data-testid="restore-btn"]')
+    expect((restoreBtn.element as HTMLButtonElement).disabled).toBe(true)
+    const purgeBtn = batches[0]!.find('[data-testid="purge-btn"]')
+    expect((purgeBtn.element as HTMLButtonElement).disabled).toBe(true)
+
+    // 点击不发起任何请求（onRestore/openPurge 有守卫，按钮 disabled 双保险）
+    await restoreBtn.trigger('click')
+    await flushPromises()
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+
+    // 有明确文案说明原因
+    expect(wrapper.find('[data-testid="incomplete-batch-alert"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="incomplete-batch-hint"]').text()).toContain('无权查看')
+  })
+
+  it('批次根不可见（member）：purge 按钮整体不渲染，还原仍禁用', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input)
+        const method = init?.method ?? 'GET'
+        if (url.endsWith('/me')) {
+          return json({
+            user: { id: 'u1', email: 'a@b.c', displayName: 'A', status: 'active' },
+            workspaces: [{ id: WS_ID, name: '研发空间', ownerId: 'u2', defaultRole: 'edit', role: 'member' }],
+          })
+        }
+        if (method === 'GET' && url.endsWith(`/workspaces/${WS_ID}/trash`)) {
+          return json({ nodes: [item({ id: 'd1', title: '子文档', parentId: 'f1', trashRootId: 'f1' })] })
+        }
+        return json({ error: { code: 'INTERNAL_ERROR', message: 'x' } }, 500)
+      }),
+    )
+    const wrapper = await mountPage()
+    await flushPromises()
+
+    const batches = wrapper.findAll('[data-testid="trash-batch"]')
+    expect(batches).toHaveLength(1)
+    expect((batches[0]!.find('[data-testid="restore-btn"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="purge-btn"]').exists()).toBe(false)
+  })
+
+  it('批次完整时还原与彻底删除不受影响（回归）', async () => {
+    stubApi(trashHandler([item({ id: 'f1', title: '目录', type: 'folder', trashRootId: 'f1' })]))
+    const wrapper = await mountPage()
+    await flushPromises()
+
+    const batches = wrapper.findAll('[data-testid="trash-batch"]')
+    expect(batches[0]!.text()).toContain('1 项')
+    expect((batches[0]!.find('[data-testid="restore-btn"]').element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="incomplete-batch-alert"]').exists()).toBe(false)
   })
 
   it('跨空间隔离：只加载当前 workspaceId 的回收站', async () => {
