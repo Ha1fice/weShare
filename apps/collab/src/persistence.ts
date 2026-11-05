@@ -24,8 +24,12 @@
  * 两个客户端同时首次打开时，各自会从 `content_json` 建一份 Y.Doc。
  * 若都写入，合并后文本会重复。两层保证：
  *   1. 进程内：`loading` 表按 nodeId 串行化，后到者等前者完成后再从数据库回放；
- *   2. 跨进程：`claimCollaborative` 条件更新（`yjs_state IS NULL`），
+ *   2. 跨进程：`saveCollaborative({ expectYjsState: 'null' })` 的 CAS，
  *      没抢到的放弃自己的迁移结果，改为回放数据库里的那份。
+ *
+ * 注意 CAS **只用于迁移那一次**。日常落库必须无条件写——把条件挂在
+ * `updateMany` 上会让后续每次落库都因为 `yjs_state` 已非空而影响 0 行，
+ * 表现为"协同里改的东西刷新就没了"。
  */
 
 import * as Y from 'yjs'
@@ -182,37 +186,30 @@ export class Persistence {
 
     const text = pmJsonToPlainText(json)
     const state = Y.encodeStateAsUpdate(document)
+    const mirror = yXmlFragmentToProsemirrorJSON(fragment)
 
-    const claimed = await this.repos.contents.claimCollaborative({
+    // 抢"迁入协同"的 CAS 资格：只有数据库里 yjsState 仍为 NULL 才写。
+    // 抢到了 → 之后所有客户端都从 yjs_state 回放；
+    // 没抢到 → 别人先迁移了，以数据库那份为准，丢弃本地迁移结果，
+    //         否则两份初始内容合并会变成重复文本。
+    const { claimed } = await this.repos.contents.saveCollaborative({
       nodeId,
+      contentJson: mirror,
       yjsState: state,
       stateVector: Y.encodeStateVector(document),
       textPreview: text.slice(0, 200),
       charCount: text.length,
       docSizeBytes: state.byteLength,
+      expectYjsState: 'null',
     })
 
     if (!claimed) {
-      // 别人先迁移了：以数据库那份为准，丢弃本地迁移结果，
-      // 否则两份初始内容合并会变成重复文本。
       fragment.delete(0, fragment.length)
       const latest = await this.repos.contents.findByNodeId(nodeId)
       if (latest?.yjsState) {
         Y.applyUpdate(document, new Uint8Array(latest.yjsState), 'migration-loser')
       }
-      return
     }
-
-    // 迁移完成：把最终状态驻进数据库，之后所有客户端都从 yjs_state 回放。
-    const finalState = Y.encodeStateAsUpdate(document)
-    await this.repos.contents.saveCollaborative({
-      nodeId,
-      yjsState: finalState,
-      stateVector: Y.encodeStateVector(document),
-      textPreview: text.slice(0, 200),
-      charCount: text.length,
-      docSizeBytes: finalState.byteLength,
-    })
   }
 
   // ------------------------------------------------------------ 落库
@@ -237,6 +234,7 @@ export class Persistence {
       mirror = undefined
     }
 
+    // 无条件落库：协同一旦启用，这里是正文的唯一写入路径。
     await this.repos.contents.saveCollaborative({
       nodeId,
       yjsState: state,

@@ -141,6 +141,37 @@ Issue #3 下有 4 个 open PR，其中 #7（花小码）与 #8（CodeBuddy）是
 
 ---
 
+## 评审修复（2026-11-05，花小码，分支 `npc/8-collab-persist-fix`）
+
+对 #8 主线做了一轮**以「真丢数据」为标准**的复核。找到三个真问题，两个已修并有回归测试。
+
+### 已修（P0/P1）
+
+| # | 问题 | 后果 | 修法 |
+|---|---|---|---|
+| F1 | `ContentsRepository.claimCollaborative` 把迁移锁条件（`yjs_state IS NULL`）用在了**每一次**协同落库上 | 迁移那一次之后，所有 `updateMany` 影响 0 行 → **协同时写的内容一次都没进库**，刷新即丢；而 `store()` 不检查返回值，日志一片绿 | 合并成一个 `saveCollaborative({ expectYjsState })`：日常落库无条件写，只有迁移桥那一次带 `'null'` 做 CAS。迁移桥也补上了 `content_json` 镜像（此前迁移后列表摘要会一直是空的） |
+| F2 | 文档页只在 `content_json` 里 `collabEnabled === true` 时连协同；而服务端只在**协同落库时**才置 `yjs_state` | 新文档永远 `collabEnabled=false` → 永远走单机 REST → **永远进不了协同**。同一篇文档，有人看到的是可编辑的编辑器，别人看到的是"无法协同" | 打开文档一律走协同；文档还没进过协同时，把单机正文经 `localStorage` 草稿交给 Y.Doc 的迁移桥（`rememberCollabDraft` / `takeCollabDraft`） |
+| F3 | 首次握手若 `authenticationFailed`，没人再发 `synced` | 页面永远停在"正在与服务器同步…"，用户以为自己在一篇正在加载的文档上编辑 | `connectCollab` 把 `authenticationFailed` 一并映射为 `denied`，界面给出明确出口 |
+
+### 顺手修（不影响行为，防将来漂移）
+
+- 三处 Tiptap 扩展集都单独注册了 `Underline`，而 StarterKit 3 已内置 → 运行时 warn「Duplicate extension names」。这恰好是「协同侧 Schema 与前端不一致会静默丢节点」那条风险的温床，已统一去掉。
+- `DocPage.test.ts` 的用例描述与实现已脱节（断言 `.doc-editor`、`已保存`），按新的协同入口重写，并补上"会话必须是登录态"这个前提。
+
+### 回归证据
+
+- `apps/collab/test/collab-server.test.ts` 新增用例：**迁移之后**再写一段，数据库里必须有它。把修复回退，这条与原有"断开后能恢复"一起变红（已实测）。
+- `apps/collab/test/persistence.test.ts` 新增两条：CAS 只让第一个赢；迁移之后的日常落库必须真写。
+- `pnpm verify:full` 11 步全绿。
+
+### 复核后仍然成立的部分
+
+- 三道关（Origin 白名单 / 会话 + authz / 只读强制）都真的在服务端强制，`visitor` 拿不到可写连接。
+- REST 与协同的互斥（不变式 I2）方向正确：`yjs_state` 非空即拒绝 `PUT content`。
+- 真实浏览器两人协同**依然没人做过**，结论不变，见上方「验证边界」。
+
+---
+
 ## 需要 Codex 大脑决定的事
 
 **暂时没有。** 本轮所有决策都在 Issue #3 §6 授权的范围内。

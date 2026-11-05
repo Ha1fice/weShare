@@ -207,6 +207,55 @@ describe('协同服务（端到端）', () => {
     }
   })
 
+  it('落库：迁移之后的每一次改动都真的写进数据库（回归 I2 静默丢写）', async () => {
+    const { nodeId, tokens } = await seedDoc({
+      contentJson: { type: 'doc', content: [{ type: 'paragraph' }] },
+    })
+    const token = tokens[Object.keys(tokens)[0]!]!
+
+    const write = (doc: Y.Doc, text: string) =>
+      doc.transact(() => {
+        const fragment = doc.getXmlFragment('prosemirror')
+        const p = new Y.XmlElement('paragraph')
+        const t = new Y.XmlText()
+        t.insert(0, text)
+        p.insert(0, [t])
+        fragment.insert(fragment.length, [p])
+      })
+
+    const collect = (doc: Y.Doc): string => {
+      const texts: string[] = []
+      const walk = (n: Y.XmlElement | Y.XmlText) => {
+        if (n instanceof Y.XmlText) {
+          texts.push(n.toString())
+          return
+        }
+        for (const c of n.toArray()) if (c instanceof Y.XmlElement || c instanceof Y.XmlText) walk(c)
+      }
+      const fragment = doc.getXmlFragment('prosemirror')
+      for (const c of fragment.toArray()) if (c instanceof Y.XmlElement || c instanceof Y.XmlText) walk(c)
+      return texts.join('')
+    }
+
+    // 客户端 1：首次打开 → 迁移桥落一次库
+    const docA = new Y.Doc()
+    const a = connect(nodeId, token, docA)
+    await waitEvent(a as never, 'synced')
+    await new Promise((r) => setTimeout(r, 300))
+
+    // 迁移之后才写的内容：这才是"用户真的在协同里写的东西"
+    write(docA, '第一次协同写入')
+    await new Promise((r) => setTimeout(r, 2200))
+
+    const row = await db.repos.contents.findByNodeId(nodeId)
+    const stored = new Y.Doc()
+    Y.applyUpdate(stored, new Uint8Array(row!.yjsState!))
+    expect(collect(stored)).toContain('第一次协同写入')
+
+    a.destroy()
+    docA.destroy()
+  })
+
   it('落库：断开后 yjs_state 非空，刷新能恢复', async () => {
     const { nodeId, tokens } = await seedDoc({
       contentJson: {
