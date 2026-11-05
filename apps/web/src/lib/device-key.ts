@@ -111,10 +111,12 @@ export async function sha256Hex(input: string): Promise<string> {
  * 指纹则在盐丢失（清缓存、换存储分区）后仍能把人认回来。
  */
 export async function resolveDeviceKey(
-  traits: DeviceTraits = readDeviceTraits(),
-  salt: string = readOrCreateSalt(safeStorage()),
+  traits?: DeviceTraits,
+  salt?: string,
 ): Promise<string> {
-  return sha256Hex(`weshare-device-v1|${serializeTraits(traits)}|${salt}`)
+  const resolvedTraits = traits ?? readDeviceTraits()
+  const resolvedSalt = salt ?? readOrCreateSalt(safeStorage())
+  return sha256Hex(`weshare-device-v1|${serializeTraits(resolvedTraits)}|${resolvedSalt}`)
 }
 
 function safeStorage(): Storage | undefined {

@@ -43,6 +43,21 @@ HALFICE 明确：能自己定的不要逐条回问，需要他定的按重要性
 2. **协同服务是个空壳。** `new Server({ port })`，没有鉴权、没有 Origin 校验、没有落库。→ 现在三道关齐全，3 项真 WebSocket 端到端测试。
 3. **UI 是开发原型完成度，且不是"凌乱"而是"没系统"。** 没有 token、没有基础组件、`window.prompt/confirm` 当交互、回收站没有入口。→ 现在有语义 token + 组件层，全站 0 处原生弹窗。
 
+### 免密身份（可选形态，PR #9 单独走）
+
+按用户想法加了一条"简版"入口：打开页面输个名字就进去，身份由设备指纹派生。
+**默认关闭**，两边开关同时打开才生效：`DEVICE_IDENTITY=1`（api）+ `VITE_DEVICE_IDENTITY=true`（web）。
+试用机用 `.env.trial.example`——模板里才打开，默认值一个字没改。
+
+- Spec：`docs/specs/device-identity.md`
+- api：`apps/api/src/domain/identity-service.ts`、`apps/api/src/http/identity-routes.ts`
+- web：`apps/web/src/lib/device-key.ts`、`apps/web/src/pages/WelcomePage.vue`
+- 测试：api `test/identity.test.ts`（11 项）、web `lib/device-key.test.ts`（6 项）+ `pages/WelcomePage.test.ts`（5 项）
+
+**诚实的安全边界**：deviceKey 不是凭证，知道它就能冒充。只适合内网/试用，
+生产保持关闭。这是刻意接受的代价，换来"打开即用"，不是遗漏。熵来源、撞号、
+清空浏览器这三条见 Spec「安全边界」一节。
+
 ### 虚拟滚动的验证边界（如实记录）
 
 happy-dom 无布局，`TreeVirtualizer` 的实际裁切行为**无法在组件测试里验证**。

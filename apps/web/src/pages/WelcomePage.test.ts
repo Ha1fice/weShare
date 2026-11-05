@@ -98,8 +98,7 @@ describe('首屏输名字', () => {
     const { wrapper, router } = await mountPage()
     await wrapper.find('input').setValue('张三')
     await wrapper.find('form').trigger('submit')
-    await flushPromises()
-    await flushPromises()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/'))
 
     const deviceCall = calls.find((c) => c.url.includes('/auth/device'))
     expect(deviceCall?.body).toMatchObject({ displayName: '张三' })
