@@ -35,6 +35,9 @@ import {
 } from '@weshare/authz'
 import { forbidden, notFound, validationFailed } from '../http/errors.js'
 
+/** 面包屑里不可读祖先的占位标题——保留层级位置，但不泄露标题。 */
+const HIDDEN_TITLE = '…'
+
 /** 新文档的初始正文（空段落）。 */
 const EMPTY_DOC_JSON = {
   type: 'doc',
@@ -265,11 +268,36 @@ export class NodeService {
     return result
   }
 
-  /** 面包屑：从根到父级。 */
+  /**
+   * 面包屑：从根到父级。
+   *
+   * **必须按调用者的可读性过滤**：`listAncestors` 不看可见性，直接把原始
+   * 祖先抛给前端等于泄露"用户无权读的目录叫什么"。不可读的祖先用
+   * `{ id, title: 占位 }` 表示——保留位置，但不出标题。
+   */
   async breadcrumb(nodeId: string, userId: string): Promise<Array<{ id: string; title: string }>> {
     const { node } = await this.requireRole(nodeId, userId, 'view')
     const ancestors = await this.repos.nodes.listAncestors(node.id)
-    return ancestors.map((a) => ({ id: a.id, title: a.title }))
+    if (ancestors.length === 0) return []
+
+    const base = await this.workspaceBase(node.workspaceId, userId)
+    const aclRows = await this.repos.acl.listForNodes(
+      ancestors.map((a) => a.id),
+      userId,
+      node.workspaceId,
+    )
+    const aclByNode = groupAclByNode(aclRows)
+
+    return ancestors.map((a) => {
+      const ctx: AuthzContext = {
+        userId,
+        workspaceRole: base.workspaceRole,
+        workspaceDefaultRole: base.workspaceDefaultRole,
+        aclEntries: aclByNode.get(a.id) ?? [],
+      }
+      const readable = effectiveRole(ctx, toAuthzNode(a)) !== null
+      return { id: a.id, title: readable ? a.title : HIDDEN_TITLE }
+    })
   }
 
   /** 按标题前缀搜索（只返回可读节点）。 */
@@ -377,13 +405,35 @@ export class NodeService {
     return { node, role: 'manage' }
   }
 
-  /** 改名 / 改可见性。 */
+  /**
+   * 改名 / 改可见性。
+   *
+   * **两项分开授权**：改名要求 edit；改可见性要求 manage 且只能是节点 owner
+   * 或空间 owner/admin。
+   *
+   * 理由：空间默认角色通常是 edit，所以任一成员对他人创建的公开文档都有 edit。
+   * 若可见性也走 edit，成员就能把别人的公开文档改成 private——按 authz 的 base
+   * 规则，此后只有 owner 与显式 ACL 可读，原作者和空间管理员全被锁在门外，
+   * 且没有撤销入口。这是权限提升，不是普通编辑。
+   */
   async updateNode(
     userId: string,
     nodeId: string,
     input: { title?: string; visibility?: Visibility },
   ): Promise<NodeAccess> {
-    const { node, role } = await this.requireRole(nodeId, userId, 'edit')
+    let access: NodeAccess
+    if (input.visibility !== undefined) {
+      access = await this.requireRole(nodeId, userId, 'manage')
+      const { node } = access
+      const base = await this.workspaceBase(node.workspaceId, userId)
+      const isWorkspaceManager = base.workspaceRole === 'owner' || base.workspaceRole === 'admin'
+      if (node.ownerId !== userId && !isWorkspaceManager) {
+        throw forbidden('仅文档所有者或空间管理员可修改可见性')
+      }
+    } else {
+      access = await this.requireRole(nodeId, userId, 'edit')
+    }
+    const { node, role } = access
 
     const updated = await this.repos.nodes.update(node.id, {
       ...(input.title !== undefined ? { title: input.title } : {}),

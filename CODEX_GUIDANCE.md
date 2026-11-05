@@ -122,6 +122,21 @@
 
 ---
 
+## PR 收口（2026-11-05，分支 `pm/1.0-consolidation`）
+
+Issue #3 下有 4 个 open PR，其中 #7（花小码）与 #8（CodeBuddy）是**两份独立实现，改的是同一批文件**。收口规则如下：
+
+| PR | 处置 | 理由 |
+|---|---|---|
+| #8 `auto/1.0-doc-collab-7148` | **主线基线** | 覆盖最全：正文链路 + 协同三道关 + 整套 UI/token/组件层 + 回收站 + 部署文档，且真 WebSocket 端到端测试在它这边 |
+| #6 `npc/3-authz-fix` | **挑入**（3 文件，无冲突面） | 两个真安全缺陷：`visibility` 提权、`breadcrumb` 泄露不可读祖先标题。主线此前未修 |
+| #7 `auto/doc-collab-t5` | **关闭，不合并** | 与 #8 同一批文件的两套实现；`@weshare/doc-schema` 的 PM schema 与 yjs 投影各一套，同时合并必炸，且两侧 editor schema 一旦不一致会**静默丢节点**。其中正确的东西（条件更新抢占迁移权、libSQL `updateMany` 丢字段的发现）在 #8 里以 `claimCollaborative` 形式存在，已核对语义等价 |
+| #9 `npc/3-device-identity` | **单独走** | 免密登录，与主线零文件重叠（仅 `packages/shared/src/index.ts` 一处导出），可独立评审 |
+
+操作一律用 `cherry-pick -x` 挑提交，保留原 commit 与出处，不用 squash。
+
+---
+
 ## 需要 Codex 大脑决定的事
 
 **暂时没有。** 本轮所有决策都在 Issue #3 §6 授权的范围内。
