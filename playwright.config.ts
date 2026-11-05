@@ -58,8 +58,22 @@ export default defineConfig({
           stderr: 'pipe',
         },
         {
+          // 协同服务：打开文档页一律走 Y.Doc（DocPage「一律走协同」分支），
+          // 不起它页面状态就是「已断线」，回收站用例会被文档页卡住
           command:
-            'VITE_DEVICE_IDENTITY=true API_PROXY_TARGET=http://127.0.0.1:3101 WEB_PORT=5173 pnpm --filter @weshare/web dev',
+            // 不用 pnpm --filter dev（tsx watch）：watcher 在 CI 容器里会让整条
+            // 命令静默退出。改用一次性启动——start() 返回后 server 还挂着，
+            // 进程不退出，正好当 webServer 用。LOG_LEVEL 用 debug 是因为
+            // collab 的 zod 配置不认 silent。
+            'cd apps/collab && PORT=3111 DB_PATH=data/weshare-e2e-device.db ALLOWED_ORIGINS=http://127.0.0.1:5173 LOG_LEVEL=debug node_modules/.bin/tsx scripts-dev-serve.mts',
+          port: 3111,
+          reuseExistingServer: false,
+          stdout: 'ignore',
+          stderr: 'pipe',
+        },
+        {
+          command:
+            'VITE_DEVICE_IDENTITY=true API_PROXY_TARGET=http://127.0.0.1:3101 COLLAB_PROXY_TARGET=ws://127.0.0.1:3111 WEB_PORT=5173 pnpm --filter @weshare/web dev',
           port: 5173,
           reuseExistingServer: false,
           stdout: 'ignore',

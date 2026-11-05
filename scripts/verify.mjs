@@ -31,8 +31,9 @@
  */
 
 import { spawnSync } from 'node:child_process'
+import os from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -142,11 +143,18 @@ const steps = [
     name: 'e2e 真机链路（免密身份）',
     why: '真浏览器走一遍用户路径：输名字进空间、刷新同一身份、换浏览器新身份',
     heavy: true,
-    // 浏览器没装（离线/体积受限）时跳过，不算失败——交付报告按手动清单降级
-    enabled: () => existsSync(path.join(ROOT, "e2e", "device-identity.e2e.spec.ts")),
+    // spec 存在但浏览器不可用（离线/缓存丢失）时：明确跳过并打印原因。
+    // 跳过必须可见——verify 结尾会点名列出，CI 日志里能直接搜到，
+    // 绝不允许静默变绿。正常路径由 .cnb.yml 的「安装 playwright 浏览器」保证可用。
+    enabled: () =>
+      existsSync(path.join(ROOT, 'e2e', 'device-identity.e2e.spec.ts')) &&
+      browserExecutableAvailable(),
     cmd: 'pnpm',
     args: ['exec', 'playwright', 'test'],
     cwd: ROOT,
+    skipReason:
+      'playwright 浏览器未安装（~/.cache/ms-playwright 无已安装的 chromium）。' +
+      '请在流水线先执行 pnpm exec playwright install chromium，或本机执行同一命令。',
   },
   {
     group: 'code',
@@ -161,6 +169,22 @@ const steps = [
 
 function exists(p) {
   return existsSync(p)
+}
+
+/**
+ * playwright 浏览器是否可用：探测默认安装目录里是否有 chromium headless shell。
+ * 只判「装没装」，不判「能不能跑」——跑不起来由 playwright 自己显式报错，不会被吞。
+ */
+function browserExecutableAvailable() {
+  const cache = path.join(os.homedir(), '.cache', 'ms-playwright')
+  if (!existsSync(cache)) return false
+  // playwright 的版本目录形如 chromium_headless_shell-1248，安装完会在
+  // 版本目录顶层落一个 INSTALLATION_COMPLETE 标记——下载中途被杀会留残壳，
+  // 只认标记能挡住"目录在但二进制缺"的假可用。
+  const dirs = readdirSync(cache)
+    .filter((d) => /^chromium(_headless_shell)?-/.test(d))
+    .map((d) => path.join(cache, d))
+  return dirs.some((d) => existsSync(path.join(d, 'INSTALLATION_COMPLETE')))
 }
 
 // ---------- 参数解析 ----------
@@ -255,7 +279,7 @@ if (selected.length === 0) {
   console.log('   这不是通过。任何一条门禁都没跑，等于没检查。')
   if (notReady.length > 0) {
     console.log('   以下步骤因前置条件未就位被跳过：')
-    for (const s of notReady) console.log('     - ' + s.name + '：' + (s.why || ''))
+    for (const s of notReady) console.log('     - ' + s.name + '：' + (s.skipReason || s.why || ''))
   }
   if (asJson) {
     console.log(JSON.stringify({ status: 'zero-coverage', results: [] }, null, 2))

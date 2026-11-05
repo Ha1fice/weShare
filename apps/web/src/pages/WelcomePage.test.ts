@@ -67,14 +67,25 @@ afterEach(() => {
 
 describe('首屏输名字', () => {
   // 1.0 决策：提交按钮不禁用，点错了才标红（见 LoginPage 同款交互）。
-  // 空名字时给出行内错误提示，而不是让按钮"点不动"。
-  it('名字为空时给出行内提示，填了名字提示消失', async () => {
+  // "点错了才标红"的两半都要成立：未交互不标红，点过「进入」才出提示。
+  it('初始与输入过程中不标红，点过「进入」后才给出行内提示', async () => {
     const { wrapper } = await mountPage()
-    expect(wrapper.text()).toContain('先给自己起个名字')
 
+    // 未交互：无红框、无红字
+    expect(wrapper.text()).not.toContain('先给自己起个名字')
+    expect(wrapper.find('input').attributes('aria-invalid')).toBeUndefined()
+
+    // 输入又清空仍不算"点错"——只有提交动作才触发校验展示
     await wrapper.find('input').setValue('  ')
-    expect(wrapper.text()).toContain('先给自己起个名字')
+    expect(wrapper.text()).not.toContain('先给自己起个名字')
+    expect(wrapper.find('input').attributes('aria-invalid')).toBeUndefined()
 
+    // 点过「进入」：空名字标红（红框 + 红字）
+    await wrapper.find('form').trigger('submit')
+    expect(wrapper.text()).toContain('先给自己起个名字')
+    expect(wrapper.find('input').attributes('aria-invalid')).toBe('true')
+
+    // 填了名字提示消失
     await wrapper.find('input').setValue('张三')
     expect(wrapper.text()).not.toContain('先给自己起个名字')
   })
