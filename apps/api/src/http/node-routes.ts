@@ -50,6 +50,7 @@ function toNodeView(node: TreeNode, role?: Role | null): NodeView {
     createdAt: node.createdAt.toISOString(),
     updatedAt: node.updatedAt.toISOString(),
     deletedAt: node.deletedAt ? node.deletedAt.toISOString() : null,
+    trashRootId: node.trashRootId ?? null,
     ...(role !== undefined ? { role } : {}),
   }
 }

@@ -38,6 +38,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/w/:workspaceId/trash',
+    name: 'workspace-trash',
+    component: () => import('@/pages/TrashPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/n/:nodeId',
     name: 'doc',
     component: DocPage,

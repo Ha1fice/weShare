@@ -15,6 +15,7 @@ function node(over: Partial<TreeNodeItem> & { id: string; title: string }): Tree
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-02T00:00:00.000Z',
     deletedAt: null,
+    trashRootId: null,
     role: 'manage',
     hasChildren: false,
     ...over,

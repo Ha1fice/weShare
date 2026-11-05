@@ -194,6 +194,14 @@ async function onLogout(): Promise<void> {
         成员与设置
       </router-link>
 
+      <router-link
+        v-if="workspaceId"
+        :to="{ name: 'workspace-trash', params: { workspaceId } }"
+        class="text-sm text-gray-600 hover:text-blue-600"
+      >
+        回收站
+      </router-link>
+
       <span class="ml-auto text-sm text-gray-500">{{ session.user?.displayName }}</span>
       <button
         type="button"

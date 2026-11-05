@@ -446,6 +446,9 @@ describe('删除 / 回收站 / 还原 / 彻底删除', () => {
       headers: auth(token),
     })
     expect(trash.json().nodes.map((n: { id: string }) => n.id)).toContain(nodeId)
+    // S3 契约补充：软删除节点带 trashRootId（批次根），未删除节点为 null
+    const trashed = trash.json().nodes.find((n: { id: string }) => n.id === nodeId)
+    expect(trashed.trashRootId).toBe(nodeId)
 
     const restore = await ctx.app.inject({
       method: 'POST',
@@ -460,6 +463,40 @@ describe('删除 / 回收站 / 还原 / 彻底删除', () => {
       headers: auth(token),
     })
     expect(after.json().nodes).toHaveLength(0)
+  })
+
+  it('删除目录连同子树：回收站按 trashRootId 聚批', async () => {
+    const token = await loginAs(OWNER)
+    const wsId = await createWorkspace(token)
+    const folder = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/nodes',
+      headers: auth(token),
+      payload: { workspaceId: wsId, type: 'folder', title: '目录' },
+    })
+    const folderId = folder.json().node.id
+    const child = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/nodes',
+      headers: auth(token),
+      payload: { workspaceId: wsId, parentId: folderId, type: 'doc', title: '子文档' },
+    })
+    const childId = child.json().node.id
+
+    await ctx.app.inject({ method: 'DELETE', url: `/api/v1/nodes/${folderId}`, headers: auth(token) })
+
+    const trash = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/v1/workspaces/${wsId}/trash`,
+      headers: auth(token),
+    })
+    const nodes = trash.json().nodes
+    expect(nodes.map((n: { id: string }) => n.id)).toContain(folderId)
+    expect(nodes.map((n: { id: string }) => n.id)).toContain(childId)
+    // 子节点和根节点的 trashRootId 都指向批次根（被删目录自身）
+    for (const n of nodes) {
+      expect(n.trashRootId).toBe(folderId)
+    }
   })
 
   it('彻底删除：未进回收站时返回 422', async () => {
