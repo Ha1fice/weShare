@@ -128,12 +128,18 @@ export {
   RegisterBodySchema,
   LoginBodySchema,
   UpdateMeBodySchema,
+  DeviceKeySchema,
+  DeviceIdentityBodySchema,
+  BindIdentityBodySchema,
+  DEVICE_IDENTITY_FLAG,
 } from './auth-contract.js'
 
 export type {
   RegisterBody,
   LoginBody,
   UpdateMeBody,
+  DeviceIdentityBody,
+  BindIdentityBody,
   CurrentUser,
   MeResponse,
   AuthResponse,

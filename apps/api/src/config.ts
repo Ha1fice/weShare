@@ -47,6 +47,18 @@ const ConfigSchema = z.object({
   /** 登录失败锁定窗口（秒）。 */
   LOGIN_LOCK_WINDOW_SECONDS: z.coerce.number().int().min(1).max(3600).default(60),
 
+  /**
+   * 是否启用免密身份（设备指纹）。
+   *
+   * 打开后 `POST /api/v1/auth/device` 才注册：用户输入一个名字即进入，
+   * 不需要邮箱与密码。这是"简版"形态，适合内网/试用；生产默认关闭，
+   * 因为它把身份安全性降到了"知道 deviceKey 即可冒充"的水平。
+   */
+  DEVICE_IDENTITY: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+
   /** 是否开放注册。生产应关闭。 */
   ALLOW_REGISTER: z
     .string()

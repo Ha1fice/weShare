@@ -32,6 +32,13 @@ export class UsersRepositoryImpl implements UsersRepository {
     return row ? toUser(row) : null
   }
 
+  async findByEmailLower(emailLower: string): Promise<User | null> {
+    const row = (await this.prisma.user.findUnique({
+      where: { emailLower: normalizeEmail(emailLower) },
+    })) as PrismaUser | null
+    return row ? toUser(row) : null
+  }
+
   async findAuthRecordByEmail(email: string): Promise<AuthRecord | null> {
     const row = (await this.prisma.user.findUnique({
       where: { emailLower: normalizeEmail(email) },

@@ -61,6 +61,14 @@ export interface UsersRepository {
    */
   create(input: CreateUserInput): Promise<User>
 
+  /**
+   * 按邮箱精确查（免密身份用它把设备指纹映射到稳定账号）。
+   *
+   * 与 findByEmail 的区别：这是**按已知的内部地址取账号**，不是面向用户的登录入口，
+   * 因此不做防枚举考量——调用方必须自己保证地址不是用户输入。
+   */
+  findByEmailLower(emailLower: string): Promise<User | null>
+
   /** 更新显示名。 */
   updateDisplayName(id: string, displayName: string): Promise<User>
 
