@@ -176,3 +176,7 @@ export type {
   TreeNodeView,
   BreadcrumbItem,
 } from './node-contract.js'
+
+// ---------------------------------------------------------------- 错误文案兜底
+
+export { ERROR_MESSAGES, errorMessage } from './error-messages.js'
