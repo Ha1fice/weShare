@@ -10,7 +10,7 @@
  *   2. 错误就地显示在按钮上方，不用 toast 飘走——用户需要看着它改。
  */
 import { computed, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client.js'
 import { useSessionStore } from '@/stores/session.js'
 import { PASSWORD_MIN_LENGTH, checkPasswordPolicy } from '@weshare/shared'
@@ -18,8 +18,8 @@ import { AppAlert, AppButton, AppField, AppInput } from '@/components/ui/index.j
 import AppIcon from '@/components/icons/AppIcon.vue'
 
 const session = useSessionStore()
-const router = useRouter()
 const route = useRoute()
+const router = useRouter()
 
 const mode = ref<'login' | 'register'>('login')
 const email = ref('')
@@ -60,8 +60,14 @@ async function onSubmit(): Promise<void> {
     } else {
       await session.register(email.value.trim(), password.value, displayName.value.trim())
     }
+    // 会话过期被 401 送来这里时带 redirect，登录后回跳原页面。
+    // 只接受站内路径（以 / 开头且不是 //），防开放重定向。
     const redirect = route.query.redirect
-    await router.replace(typeof redirect === 'string' && redirect ? redirect : '/')
+    const target =
+      typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+        ? redirect
+        : '/'
+    await router.replace(target)
   } catch (err) {
     errorMessage.value = err instanceof ApiError ? err.message : '发生未知错误，请重试'
   } finally {
