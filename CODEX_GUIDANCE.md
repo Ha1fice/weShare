@@ -135,6 +135,10 @@ Issue #3 下有 4 个 open PR，其中 #7（花小码）与 #8（CodeBuddy）是
 
 操作一律用 `cherry-pick -x` 挑提交，保留原 commit 与出处，不用 squash。
 
+**收口后实测**：`pm/1.0-consolidation` 基于 `#8` 头部 `618a1b0` 挑入 `b8541f3`（#6），
+本地 `pnpm install --frozen-lockfile` + `pnpm verify:full` **11 步全绿**，
+含 api 单测（其中 `node-service.test.ts` 新增 4 条 authz 回归）。
+
 ---
 
 ## 需要 Codex 大脑决定的事
