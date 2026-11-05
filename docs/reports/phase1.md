@@ -47,6 +47,13 @@
 
 **测试分布**：web 5 文件 48 例（含 TrashPage 11 例、session 3 例、LoginPage 14 例）、api 10 文件 197 例、shared 2 文件 20 例。
 
+**测试数口径说明**：api 侧报告的 197 例是 vitest 实跑数——参数化用例（`it.each`）在运行时展开为多条，故大于静态 `it()` 声明数；按静态声明数口径 api 为 162 例。两者都对，只是口径不同，非虚报。
+
+**合流更新（PR #13 合入 main 后的返工提交）**：
+- `session.ts` 401 统一跳转目标按 `deviceMode` 分流：免密模式送 `welcome`（带 redirect），密码模式送 `login`——免密用户没有"登录"这回事，一刀切跳 login 会送进不该出现的下车口。新增 2 项单测（免密分流 + welcome 页防循环），session 用例 3→5。
+- 合流后 `errorMessage()` 已接入全部错误出口（TrashPage/DocPage/WorkspacePage/WorkspaceSettingsPage/LoginPage/AccountPage/NewWorkspacePage/WelcomePage），S1 为全站覆盖，非仅回收站。
+- web 用例数：9 文件 76 例（含合流带入的 WelcomePage 5 例等）。
+
 **`pnpm -r typecheck` / `pnpm -r lint`**：全部包通过（verify:full 的 code 组已含，独立复跑亦绿）。
 
 ## 4. 已知限制（引用架构文档 §15.3）

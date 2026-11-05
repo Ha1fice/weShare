@@ -49,12 +49,14 @@ function stubFetch(): void {
 }
 
 describe('401 统一登录跳转', () => {
+
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
     useSessionStore().clear()
   })
@@ -93,6 +95,46 @@ describe('401 统一登录跳转', () => {
     // 登录失败的 401 不该触发任何额外导航
     expect(pushSpy).not.toHaveBeenCalled()
     expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('免密模式（deviceMode）下触发 401：跳 welcome 带 redirect 而非 login', async () => {
+    // 免密模式没有"登录"这回事，守卫也把未登录请求送去 welcome——
+    // handler 一刀切跳 login 会把免密用户送进不该出现的下车口。
+    vi.stubEnv('VITE_DEVICE_IDENTITY', 'true')
+    setActivePinia(createPinia())
+    stubFetch()
+    await router.push('/w/w1')
+    await router.isReady()
+    const session = useSessionStore()
+    await session.fetchMe()
+    expect(session.status).toBe('authenticated')
+
+    await expect(api.get('/workspaces/w1/trash')).rejects.toThrow()
+    // handler 里 router.push 是 fire-and-forget，等导航真正落地再断言
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('welcome'), {
+      timeout: 2000,
+      interval: 10,
+    })
+
+    expect(session.status).toBe('anonymous')
+    expect(router.currentRoute.value.query.redirect).toBe('/w/w1')
+  })
+
+  it('免密模式下已在 welcome 页触发 401：不再发起跳转（防守卫循环）', async () => {
+    vi.stubEnv('VITE_DEVICE_IDENTITY', 'true')
+    setActivePinia(createPinia())
+    vi.stubGlobal('fetch', vi.fn(async () => unauthorized()))
+    await router.push('/welcome')
+    await router.isReady()
+    const pushSpy = vi.spyOn(router, 'push')
+    const session = useSessionStore()
+
+    await expect(api.get('/workspaces/w1/trash')).rejects.toThrow()
+    await flushPromises()
+
+    expect(session.status).toBe('anonymous')
+    expect(pushSpy).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.name).toBe('welcome')
   })
 
   it('匿名状态触发 401：不清状态、不导航', async () => {

@@ -28,6 +28,9 @@ export const useSessionStore = defineStore('session', () => {
    * 否则身份接口 404 —— 前端会自然回落到登录页。
    */
   const deviceMode = import.meta.env.VITE_DEVICE_IDENTITY === 'true'
+  // handler 内引用同一个值：deviceMode 是按值暴露给外部的，store 里用 ref 保一份，
+  // 测试里 stubEnv 后重建 pinia 时它随 setup 重新求值。
+  const deviceModeRef = ref(deviceMode)
 
   /** 是否已登录。 */
   function isAuthenticated(): boolean {
@@ -123,18 +126,23 @@ export const useSessionStore = defineStore('session', () => {
     workspaces.value = []
   }
 
-  // 后端返回 401 时自动清状态并送回登录页——会话在别处过期的情况。
+  // 后端返回 401 时自动清状态并送回入口页——会话在别处过期的情况。
   // 用户停在业务页面时会话过期，若只清状态不跳转，页面会停在无响应状态
   // （路由守卫只在导航时检查）。带 redirect 让登录后回跳原页面；
-  // 已在登录页时不跳（登录失败也是 401，重复 push 会冲掉 redirect query，
+  // 已在当前入口页时不跳（登录失败也是 401，重复 push 会冲掉 redirect query，
   // 且避免与守卫互相触发循环）。
+  // 跳转目标按 deviceMode 分流：免密模式下没有"登录"这回事，
+  // 守卫也把未登录请求送去 welcome——一刀切跳 login 会把免密用户
+  // 送进一个不该出现的下车口。
   setUnauthorizedHandler(() => {
     if (status.value !== 'authenticated') return
     clear()
-    if (router.currentRoute.value.name !== 'login') {
+    const current = router.currentRoute.value
+    const homeName = deviceModeRef.value ? 'welcome' : 'login'
+    if (current.name !== homeName) {
       void router.push({
-        name: 'login',
-        query: { redirect: router.currentRoute.value.fullPath },
+        name: homeName,
+        query: { redirect: current.fullPath },
       })
     }
   })
