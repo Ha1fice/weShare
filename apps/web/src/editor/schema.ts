@@ -10,7 +10,6 @@
  */
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
-import Underline from '@tiptap/extension-underline'
 import Placeholder from '@tiptap/extension-placeholder'
 import { LINK_PROTOCOLS, isSafeLinkHref } from '@weshare/doc-schema'
 
@@ -29,7 +28,7 @@ export function buildExtensions(options: SchemaOptions) {
       // 历史记录用 PM 自带的 undo/redo，不需要额外扩展
       link: false,
     }),
-    Underline,
+    // StarterKit 3 已内置 underline，不要再单独注册（重复会 warn 且可能多一份同名 mark）
     Link.configure({
       openOnClick: false,
       autolink: true,

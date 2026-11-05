@@ -10,6 +10,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { AuthResponse, CurrentUser, MeResponse } from '@weshare/shared'
 import { api, ApiError, setUnauthorizedHandler } from '../api/client.js'
+import { router } from '../app/router.js'
 import { resolveDeviceKey } from '../lib/device-key.js'
 
 export type SessionStatus = 'unknown' | 'authenticated' | 'anonymous'
@@ -122,10 +123,19 @@ export const useSessionStore = defineStore('session', () => {
     workspaces.value = []
   }
 
-  // 后端返回 401 时自动清状态——会话在别处过期的情况
+  // 后端返回 401 时自动清状态并送回登录页——会话在别处过期的情况。
+  // 用户停在业务页面时会话过期，若只清状态不跳转，页面会停在无响应状态
+  // （路由守卫只在导航时检查）。带 redirect 让登录后回跳原页面；
+  // 已在登录页时不跳（登录失败也是 401，重复 push 会冲掉 redirect query，
+  // 且避免与守卫互相触发循环）。
   setUnauthorizedHandler(() => {
-    if (status.value === 'authenticated') {
-      clear()
+    if (status.value !== 'authenticated') return
+    clear()
+    if (router.currentRoute.value.name !== 'login') {
+      void router.push({
+        name: 'login',
+        query: { redirect: router.currentRoute.value.fullPath },
+      })
     }
   })
 

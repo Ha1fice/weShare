@@ -11,7 +11,6 @@
 
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
-import Underline from '@tiptap/extension-underline'
 import Placeholder from '@tiptap/extension-placeholder'
 import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCaret from '@tiptap/extension-collaboration-caret'
@@ -37,7 +36,6 @@ export function buildCollabExtensions(options: CollabExtensionOptions) {
       // 必须有：否则 Yjs 的 undo manager 与 PM 的 history 两套栈打架
       undoRedo: false,
     }),
-    Underline,
     Link.configure({
       openOnClick: false,
       autolink: true,

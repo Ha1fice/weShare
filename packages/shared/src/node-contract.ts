@@ -62,6 +62,8 @@ export interface NodeView {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+  /** 软删除时所在批次的根节点 id（还原按整批进行）；未删除时为 null。 */
+  trashRootId: string | null
   /** 当前用户对该节点的有效角色。列表里不返回（省体积），详情里返回。 */
   role?: Role | null
 }

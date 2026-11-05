@@ -21,6 +21,7 @@ function node(partial: Partial<TreeNodeItem> & { id: string; title: string }): T
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     deletedAt: null,
+    trashRootId: null,
     role: 'manage',
     hasChildren: false,
     ...partial,

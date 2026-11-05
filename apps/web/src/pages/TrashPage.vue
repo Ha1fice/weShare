@@ -1,18 +1,20 @@
 <script setup lang="ts">
 /**
- * 回收站。
+ * 回收站页面（Phase 1 T5.3 S3/S4）。
  *
- * 两级危险动作，风险不同、确认方式也不同：
- *   - **还原**：可逆，一次点击即可，无需确认；
- *   - **永久删除**：不可逆，要求**手打标题**确认——不是点两下的肌肉记忆。
+ * 数据来自 `GET /workspaces/:id/trash`（只有具备 manage 权限的节点会返回，
+ * 服务端已做过滤——前端只做显隐优化，不重复做安全判断，架构文档 §8.4）。
  *
- * 列表只显示当前用户有 manage 权限的已删除节点（服务端过滤）。
+ * 聚批规则：软删除时整棵子树共享同一个 `trashRootId`（批次根是被删节点自身）。
+ * 页面上按批次根 id 分组，每组呈现为一条"删除批次"，还原/彻底删除都按批次
+ * 根节点发起——后端 restore 按 trashRootId 整批还原，purge 靠 FK 级联删子树。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client.js'
 import { nodesApi, type TreeNodeItem } from '@/api/nodes.js'
 import { useSessionStore } from '@/stores/session.js'
+import { errorMessage as formatErrorMessage } from '@weshare/shared'
 import AppShell from '@/components/layout/AppShell.vue'
 import {
   AppAlert,
@@ -26,29 +28,84 @@ import {
 import { toast } from '@/components/ui/toast.js'
 import AppIcon from '@/components/icons/AppIcon.vue'
 
+const session = useSessionStore()
 const route = useRoute()
 const router = useRouter()
-const session = useSessionStore()
 
 const workspaceId = computed(() => String(route.params.workspaceId ?? ''))
-const items = ref<TreeNodeItem[]>([])
-const loading = ref(true)
-const errorMessage = ref('')
-const busyId = ref<string | null>(null)
 
-/** 当前用户是否能在该空间永久删除（仅 owner/admin）。 */
-const canPurge = computed(() => {
-  const role = session.workspaces.find((w) => w.id === workspaceId.value)?.role
-  return role === 'owner' || role === 'admin'
+const nodes = ref<TreeNodeItem[]>([])
+const loading = ref(false)
+const errorMessage = ref('')
+
+/** 统一错误文案：服务端错误用 shared 映射，网络错误给可读提示。 */
+function messageOf(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.network) return '网络异常，请稍后重试'
+    // err.code 已收窄为服务端错误码（network=false 时不会是 NETWORK_ERROR）
+    return formatErrorMessage({
+      code: err.code,
+      message: err.message,
+    } as Parameters<typeof formatErrorMessage>[0])
+  }
+  return '操作失败，请稍后重试'
+}
+
+/** 确认弹窗状态：当前待彻底删除的批次根。null 表示弹窗关闭。 */
+const purgeTarget = ref<TreeNodeItem | null>(null)
+const purgeInput = ref('')
+const purging = ref(false)
+const restoringId = ref<string | null>(null)
+
+/** 当前用户在该空间的成员角色。 */
+const myRole = computed(
+  () => session.workspaces.find((w) => w.id === workspaceId.value)?.role ?? null,
+)
+/** 彻底删除仅空间 owner/admin（§8.2 第 5 条）；还原只需 manage，服务端已过滤。 */
+const canPurge = computed(() => myRole.value === 'owner' || myRole.value === 'admin')
+
+interface TrashBatch {
+  rootId: string
+  title: string
+  count: number
+  deletedAt: string
+  root: TreeNodeItem
+}
+
+/** 按 trashRootId 分组聚批（兜底：无 trashRootId 的旧数据按自身 id 成批）。 */
+const batches = computed<TrashBatch[]>(() => {
+  const byRoot = new Map<string, TreeNodeItem[]>()
+  for (const n of nodes.value) {
+    const rootId = n.trashRootId ?? n.id
+    const list = byRoot.get(rootId)
+    if (list) list.push(n)
+    else byRoot.set(rootId, [n])
+  }
+  const result: TrashBatch[] = []
+  for (const [rootId, list] of byRoot) {
+    const root: TreeNodeItem = list.find((n) => n.id === rootId) ?? list[0]!
+    result.push({
+      rootId,
+      title: root.title || '未命名',
+      count: list.length,
+      deletedAt: root.deletedAt ?? root.updatedAt,
+      root,
+    })
+  }
+  // 按删除时间倒序，最近删的在前
+  result.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
+  return result
 })
 
 async function load(): Promise<void> {
+  if (!workspaceId.value) return
+  loading.value = true
   errorMessage.value = ''
   try {
     const res = await nodesApi.trash(workspaceId.value)
-    items.value = res.nodes
+    nodes.value = res.nodes
   } catch (err) {
-    errorMessage.value = err instanceof ApiError ? err.message : '加载回收站失败'
+    errorMessage.value = messageOf(err)
   } finally {
     loading.value = false
   }
@@ -56,46 +113,65 @@ async function load(): Promise<void> {
 
 onMounted(load)
 
-async function restore(node: TreeNodeItem): Promise<void> {
-  busyId.value = node.id
+watch(workspaceId, () => {
+  nodes.value = []
+  void load()
+})
+
+/** 整批还原。422（上级目录已被删除等）原样提示。 */
+async function onRestore(batch: TrashBatch): Promise<void> {
+  restoringId.value = batch.rootId
+  errorMessage.value = ''
   try {
-    const res = await nodesApi.restore(node.id)
+    const res = await nodesApi.restore(batch.rootId)
     await load()
-    toast(res.affected > 1 ? `已还原 ${res.affected} 项` : `「${node.title || '未命名'}」已还原`)
+    toast(res.affected > 1 ? `已还原 ${res.affected} 项` : `已还原「${batch.title}」`)
   } catch (err) {
-    errorMessage.value = err instanceof ApiError ? err.message : '还原失败'
+    errorMessage.value = messageOf(err)
   } finally {
-    busyId.value = null
+    restoringId.value = null
   }
 }
 
-// ------------------------------------------------------------ 永久删除
-const purgeDialog = ref<{ open: boolean; node: TreeNodeItem | null; typed: string; busy: boolean }>({
-  open: false,
-  node: null,
-  typed: '',
-  busy: false,
-})
-
-function openPurge(node: TreeNodeItem): void {
-  purgeDialog.value = { open: true, node, typed: '', busy: false }
+function openPurge(batch: TrashBatch): void {
+  purgeTarget.value = batch.root
+  purgeInput.value = ''
 }
 
-const purgeTargetTitle = computed(() => purgeDialog.value.node?.title || '未命名')
-const purgeConfirmable = computed(() => purgeDialog.value.typed.trim() === purgeTargetTitle.value)
+function cancelPurge(): void {
+  purgeTarget.value = null
+  purgeInput.value = ''
+}
 
-async function submitPurge(): Promise<void> {
-  const d = purgeDialog.value
-  if (!d.node || !purgeConfirmable.value) return
-  d.busy = true
+/** 弹窗开关（AppDialog 的 v-model:open 需要可写布尔）。 */
+const purgeOpen = computed({
+  get: () => purgeTarget.value !== null,
+  set: (v: boolean) => {
+    if (!v) cancelPurge()
+  },
+})
+
+/** 彻底删除需输入批次根标题精确匹配（防误触，不可逆操作）。 */
+const purgeConfirmEnabled = computed(
+  () => purgeTarget.value !== null && purgeInput.value === (purgeTarget.value.title || '未命名'),
+)
+
+async function onPurge(): Promise<void> {
+  const target = purgeTarget.value
+  if (!target || !purgeConfirmEnabled.value || purging.value) return
+  purging.value = true
+  errorMessage.value = ''
   try {
-    await nodesApi.purge(d.node.id)
-    d.open = false
+    await nodesApi.purge(target.id)
+    const title = target.title || '未命名'
+    cancelPurge()
     await load()
-    toast('已永久删除')
+    toast(`「${title}」已彻底删除`)
   } catch (err) {
-    errorMessage.value = err instanceof ApiError ? err.message : '永久删除失败'
-    d.busy = false
+    errorMessage.value = messageOf(err)
+    cancelPurge()
+  } finally {
+    purging.value = false
   }
 }
 
@@ -106,7 +182,7 @@ function fmtTime(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-function back(): void {
+function backToWorkspace(): void {
   void router.push({ name: 'workspace', params: { workspaceId: workspaceId.value } })
 }
 </script>
@@ -121,62 +197,68 @@ function back(): void {
               type="button"
               class="rounded text-muted transition-colors hover:text-ink focus-ring"
               aria-label="返回工作区"
-              @click="back"
+              @click="backToWorkspace"
             >
               <AppIcon name="chevron-left" :size="15" />
             </button>
             <h1 class="text-[17px] font-semibold tracking-tight text-ink">回收站</h1>
           </div>
           <p class="mt-1 pl-5 text-[12px] text-muted">
-            只显示你有权限管理的已删除内容。还原后回到原来的位置。
+            只显示你有权限管理的已删除内容。还原会把整批内容放回原来的位置。
           </p>
         </div>
         <AppButton size="sm" icon="restore" :disabled="loading" @click="load">刷新</AppButton>
       </div>
 
       <AppAlert v-if="errorMessage" tone="error" class="mb-3">
-        {{ errorMessage }}
+        <span role="alert">{{ errorMessage }}</span>
         <button type="button" class="ml-2 underline" @click="load">重试</button>
       </AppAlert>
 
-      <div v-if="loading" class="space-y-2">
+      <div v-if="loading" data-testid="trash-loading" class="space-y-2">
         <AppSkeleton v-for="i in 4" :key="i" height="40px" rounded="6px" />
       </div>
 
-      <div v-else-if="items.length === 0" class="rounded-lg border border-line bg-surface">
+      <div v-else-if="batches.length === 0" data-testid="trash-empty" class="rounded-lg border border-line bg-surface">
         <AppEmpty
           icon="trash"
           title="回收站是空的"
           description="被删除的文档和文件夹会先来到这里，方便你在误删后还原。"
         >
-          <AppButton @click="back">回到工作区</AppButton>
+          <AppButton @click="backToWorkspace">回到工作区</AppButton>
         </AppEmpty>
       </div>
 
-      <ul v-else class="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+      <ul
+        v-else
+        data-testid="trash-list"
+        class="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface"
+      >
         <li
-          v-for="item in items"
-          :key="item.id"
+          v-for="batch in batches"
+          :key="batch.rootId"
+          data-testid="trash-batch"
           class="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-subtle/60"
         >
           <AppIcon
-            :name="item.type === 'folder' ? 'folder' : 'file'"
+            :name="batch.root.type === 'folder' ? 'folder' : 'file'"
             :size="14"
-            :class="item.type === 'folder' ? 'text-[#c9a24a]' : 'text-faint'"
+            :class="batch.root.type === 'folder' ? 'text-[#c9a24a]' : 'text-faint'"
           />
           <div class="min-w-0 flex-1">
-            <p class="truncate text-[13px] text-ink">{{ item.title || '未命名' }}</p>
+            <p class="truncate text-[13px] text-ink">{{ batch.title }}</p>
             <p class="mt-0.5 text-[11px] text-faint">
-              {{ item.type === 'folder' ? '文件夹' : '文档' }} · 删除于 {{ fmtTime(item.deletedAt) }}
+              {{ batch.count }} 项 · 删除于 {{ fmtTime(batch.deletedAt) }}
             </p>
           </div>
 
           <AppButton
             size="sm"
             icon="restore"
-            :loading="busyId === item.id"
-            :disabled="busyId !== null"
-            @click="restore(item)"
+            data-testid="restore-btn"
+            :loading="restoringId === batch.rootId"
+            :disabled="restoringId !== null"
+            @click="onRestore(batch)"
           >
             还原
           </AppButton>
@@ -185,47 +267,49 @@ function back(): void {
             size="sm"
             variant="danger-ghost"
             icon="trash"
-            :disabled="busyId !== null"
-            @click="openPurge(item)"
+            data-testid="purge-btn"
+            :disabled="restoringId !== null"
+            @click="openPurge(batch)"
           >
-            永久删除
+            彻底删除
           </AppButton>
         </li>
       </ul>
 
-      <p v-if="!loading && items.length > 0 && !canPurge" class="mt-3 text-[11.5px] text-faint">
-        永久删除仅空间所有者与管理员可用。
+      <p v-if="!loading && batches.length > 0 && !canPurge" class="mt-3 text-[11.5px] text-faint">
+        彻底删除仅空间所有者与管理员可用。
       </p>
     </main>
 
-    <!-- 永久删除：要求手打标题 -->
+    <!-- 彻底删除：要求手打批次根标题 -->
     <AppDialog
-      v-model:open="purgeDialog.open"
-      title="永久删除，无法恢复"
+      v-model:open="purgeOpen"
+      title="彻底删除，无法恢复"
       tone="danger"
       icon="alert"
-      confirm-text="永久删除"
-      :loading="purgeDialog.busy"
-      :confirm-disabled="!purgeConfirmable || purgeDialog.busy"
-      @confirm="submitPurge"
+      confirm-text="彻底删除"
+      :loading="purging"
+      :confirm-disabled="!purgeConfirmEnabled || purging"
+      @confirm="onPurge"
     >
       <template #description>
-        「{{ purgeTargetTitle }}」
-        <template v-if="purgeDialog.node?.type === 'folder'">及其所有子项</template>
-        的正文、版本与协同时状态都会被从数据库里删掉，**不能还原**。
+        「{{ purgeTarget?.title || '未命名' }}」
+        <template v-if="purgeTarget?.type === 'folder'">及其所有子项</template>
+        的正文、版本与协同状态都会被从数据库里删掉，不能还原。
       </template>
 
       <AppField
-        :label="`请输入「${purgeTargetTitle}」以确认`"
+        :label="`请输入「${purgeTarget?.title || '未命名'}」以确认`"
         html-for="purge-confirm"
-        :hint="purgeConfirmable ? '' : '标题必须完全一致（含空格）'"
+        :hint="purgeConfirmEnabled ? '' : '标题必须完全一致（含空格）'"
       >
         <AppInput
           id="purge-confirm"
-          v-model="purgeDialog.typed"
-          :placeholder="purgeTargetTitle"
+          v-model="purgeInput"
+          data-testid="purge-confirm-input"
+          :placeholder="purgeTarget?.title || '未命名'"
           autocomplete="off"
-          @keyup.enter="submitPurge"
+          @keyup.enter="onPurge"
         />
       </AppField>
     </AppDialog>

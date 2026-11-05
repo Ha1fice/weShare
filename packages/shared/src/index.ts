@@ -192,3 +192,7 @@ export {
   extractPlainText,
 } from './content-contract.js'
 export type { ProseMirrorDoc, SaveContentBody, ContentView } from './content-contract.js'
+
+// ---------------------------------------------------------------- 错误文案兜底
+
+export { ERROR_MESSAGES, errorMessage } from './error-messages.js'

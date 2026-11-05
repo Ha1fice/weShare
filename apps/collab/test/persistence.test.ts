@@ -151,23 +151,53 @@ describe('迁移桥', () => {
     expect((await textOf(b)).split('并发迁移').length - 1).toBe(1)
   })
 
-  it('claimCollaborative 的第二个调用者拿不到资格', async () => {
+  it('并发迁移：CAS 只让第一个写入者成功', async () => {
     await createUser(ctx.db, { id: 'u1', email: 'u@example.com', displayName: 'A' })
     const { nodeId } = await createWorkspaceWithDoc(ctx.db, 'u1')
 
-    const first = await repos.contents.claimCollaborative({
+    const first = await repos.contents.saveCollaborative({
       nodeId,
       yjsState: new Uint8Array([1]),
       stateVector: new Uint8Array([2]),
+      expectYjsState: 'null',
     })
-    const second = await repos.contents.claimCollaborative({
+    const second = await repos.contents.saveCollaborative({
       nodeId,
       yjsState: new Uint8Array([3]),
       stateVector: new Uint8Array([4]),
+      expectYjsState: 'null',
     })
 
-    expect(first).toBe(true)
-    expect(second).toBe(false)
+    expect(first.claimed).toBe(true)
+    expect(second.claimed).toBe(false)
+    // 输的那份不能覆盖赢的那份
+    expect(Array.from((await repos.contents.findByNodeId(nodeId))!.yjsState!)).toEqual([1])
+  })
+
+  it('迁移之后的日常落库必须真的写进去（回归：条件更新吞掉后续写入）', async () => {
+    await createUser(ctx.db, { id: 'u1', email: 'u@example.com', displayName: 'A' })
+    const { nodeId } = await createWorkspaceWithDoc(ctx.db, 'u1')
+
+    const migrated = await repos.contents.saveCollaborative({
+      nodeId,
+      yjsState: new Uint8Array([1]),
+      stateVector: new Uint8Array([2]),
+      expectYjsState: 'null',
+    })
+    expect(migrated.claimed).toBe(true)
+
+    // yjsState 已非空，日常落库照样要写进去
+    await repos.contents.saveCollaborative({
+      nodeId,
+      yjsState: new Uint8Array([9, 9, 9]),
+      stateVector: new Uint8Array([7]),
+      textPreview: '协同里写的字',
+      charCount: 6,
+    })
+
+    const row = await repos.contents.findByNodeId(nodeId)
+    expect(Array.from(row!.yjsState!)).toEqual([9, 9, 9])
+    expect(row!.textPreview).toBe('协同里写的字')
   })
 })
 
