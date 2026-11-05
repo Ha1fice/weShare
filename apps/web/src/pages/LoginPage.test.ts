@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import LoginPage from '@/pages/LoginPage.vue'
 
 /**
@@ -208,5 +209,86 @@ describe('登录页', () => {
     const alert = wrapper.find('[role="alert"]')
     expect(alert.exists()).toBe(true)
     expect(alert.text()).toContain('无法连接服务器')
+  })
+})
+
+/**
+ * S2 验收：会话过期被 401 送到 /login?redirect=... 后，
+ * 登录成功要回跳 redirect 指向的页面；无 redirect 时回首页。
+ * 开放重定向（外站 URL）不跟随，仍回首页。
+ */
+describe('登录后按 redirect 回跳', () => {
+  const mountWithRouter = async (initialUrl: string) => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/login', name: 'login', component: LoginPage },
+        { path: '/w/:workspaceId', name: 'workspace', component: { template: '<div />' } },
+      ],
+    })
+    await router.push(initialUrl)
+    const pinia = createPinia()
+    const wrapper = mount(LoginPage, { global: { plugins: [pinia, router] } })
+    return { wrapper, router }
+  }
+
+  const fillAndSubmit = async (wrapper: Awaited<ReturnType<typeof mountWithRouter>>['wrapper']) => {
+    await wrapper.find('#email').setValue('alice@example.com')
+    await wrapper.find('#password').setValue('correct horse battery staple')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+  }
+
+  it('带 redirect 时登录成功跳回原页面', async () => {
+    mockFetch(() => ({
+      status: 200,
+      body: { user: { id: 'u1', email: 'alice@example.com', displayName: 'A' } },
+    }))
+    const { wrapper, router } = await mountWithRouter('/login?redirect=/w/w1')
+    await flushPromises()
+
+    await fillAndSubmit(wrapper)
+
+    expect(router.currentRoute.value.fullPath).toBe('/w/w1')
+  })
+
+  it('无 redirect 时登录成功回首页', async () => {
+    mockFetch(() => ({
+      status: 200,
+      body: { user: { id: 'u1', email: 'alice@example.com', displayName: 'A' } },
+    }))
+    const { wrapper, router } = await mountWithRouter('/login')
+    await flushPromises()
+
+    await fillAndSubmit(wrapper)
+
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('外站 URL 的 redirect 不跟随（防开放重定向）', async () => {
+    mockFetch(() => ({
+      status: 200,
+      body: { user: { id: 'u1', email: 'alice@example.com', displayName: 'A' } },
+    }))
+    const { wrapper, router } = await mountWithRouter('/login?redirect=https://evil.example.com')
+    await flushPromises()
+
+    await fillAndSubmit(wrapper)
+
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('协议相对路径 //evil 的 redirect 不跟随', async () => {
+    mockFetch(() => ({
+      status: 200,
+      body: { user: { id: 'u1', email: 'alice@example.com', displayName: 'A' } },
+    }))
+    const { wrapper, router } = await mountWithRouter('/login?redirect=//evil.example.com')
+    await flushPromises()
+
+    await fillAndSubmit(wrapper)
+
+    expect(router.currentRoute.value.name).toBe('home')
   })
 })

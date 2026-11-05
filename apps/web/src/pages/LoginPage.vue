@@ -11,12 +11,13 @@
  *   - 网络错误与业务错误分开提示（ApiError.network）。
  */
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client.js'
 import { useSessionStore } from '@/stores/session.js'
 import { PASSWORD_MIN_LENGTH, checkPasswordPolicy } from '@weshare/shared'
 
 const session = useSessionStore()
+const route = useRoute()
 const router = useRouter()
 
 const mode = ref<'login' | 'register'>('login')
@@ -63,7 +64,14 @@ async function onSubmit(): Promise<void> {
     } else {
       await session.register(email.value.trim(), password.value, displayName.value.trim())
     }
-    await router.push('/')
+    // 会话过期被 401 送来这里时带 redirect，登录后回跳原页面。
+    // 只接受站内路径（以 / 开头且不是 //），防开放重定向。
+    const redirect = route.query.redirect
+    const target =
+      typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
+        ? redirect
+        : '/'
+    await router.push(target)
   } catch (err) {
     if (err instanceof ApiError) {
       errorMessage.value = err.message
