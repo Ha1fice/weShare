@@ -61,12 +61,20 @@ async function onSubmit(): Promise<void> {
       await session.register(email.value.trim(), password.value, displayName.value.trim())
     }
     // 会话过期被 401 送来这里时带 redirect，登录后回跳原页面。
-    // 只接受站内路径（以 / 开头且不是 //），防开放重定向。
+    // 只接受站内路径：与当前 origin 解析出的 origin 一致才放行。
+    // 白名单必须挡住反斜杠变体——浏览器把 /\evil.com 规范化成 //evil.com，
+    // 单纯的 startsWith('/') && !startsWith('//') 拦不住。
     const redirect = route.query.redirect
-    const target =
-      typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
-        ? redirect
-        : '/'
+    let target = '/'
+    if (typeof redirect === 'string' && redirect.startsWith('/')) {
+      try {
+        if (new URL(redirect, window.location.origin).origin === window.location.origin) {
+          target = redirect
+        }
+      } catch {
+        // 解析失败（含非法字符等）一律回首页
+      }
+    }
     await router.replace(target)
   } catch (err) {
     errorMessage.value = err instanceof ApiError ? err.message : '发生未知错误，请重试'

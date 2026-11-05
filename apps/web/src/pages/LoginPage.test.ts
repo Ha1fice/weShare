@@ -288,6 +288,20 @@ describe('登录后按 redirect 回跳', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
+  it('反斜杠变体 /\\evil.com 的 redirect 不跟随', async () => {
+    // 浏览器会把 /\evil.com 规范化成 //evil.com——协议相对路径指向外站
+    mockFetch(() => ({
+      status: 200,
+      body: { user: { id: 'u1', email: 'alice@example.com', displayName: 'A' } },
+    }))
+    const { wrapper, router } = await mountWithRouter('/login?redirect=' + encodeURIComponent('/\\evil.com'))
+    await flushPromises()
+
+    await fillAndSubmit(wrapper)
+
+    expect(router.currentRoute.value.name).toBe('home')
+  })
+
   it('协议相对路径 //evil 的 redirect 不跟随', async () => {
     mockFetch(() => ({
       status: 200,
