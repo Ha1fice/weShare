@@ -33,6 +33,7 @@
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -143,7 +144,9 @@ const steps = [
     why: '真浏览器走一遍用户路径：输名字进空间、刷新同一身份、换浏览器新身份',
     heavy: true,
     // 浏览器没装（离线/体积受限）时跳过，不算失败——交付报告按手动清单降级
-    enabled: () => existsSync(path.join(ROOT, "e2e", "device-identity.e2e.spec.ts")),
+    enabled: () =>
+      existsSync(path.join(ROOT, 'e2e', 'device-identity.e2e.spec.ts')) &&
+      existsSync(path.join(homedir(), '.cache', 'ms-playwright')),
     cmd: 'pnpm',
     args: ['exec', 'playwright', 'test'],
     cwd: ROOT,

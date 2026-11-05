@@ -9,8 +9,8 @@
  *   - api 以 DEVICE_IDENTITY=1 启动（playwright.config 的 webServer 负责）
  *   - vite 以 VITE_DEVICE_IDENTITY=true 启动（同上）
  *
- * 受管环境装不上浏览器时，本文件不执行（playwright.config 里
- * 检测到无浏览器则置 testDir 为空目录），交付报告里改附手动清单。
+ * 受管环境装不上浏览器时，本文件不会被收集执行（playwright.config 里
+ * 检测到无浏览器则把 testDir 指到空目录），交付报告里改附手动清单。
  */
 import { expect, test, type Page } from '@playwright/test'
 

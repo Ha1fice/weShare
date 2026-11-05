@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
@@ -12,16 +12,21 @@ import process from 'node:process'
  *   - *.device.e2e.spec.ts  → DEVICE_IDENTITY=1 / VITE_DEVICE_IDENTITY=true
  *   - *.password.e2e.spec.ts → 两边关（免密关，/welcome 不生效）
  *
- * 容器里装不上浏览器时（离线/体积受限），用 PW_SKIP_BROWSER=1 跳过执行，
- * 交付报告按工单「说明」走手动清单降级路径。
+ * 容器里装不上浏览器时（离线/体积受限），testDir 指到空目录，
+ * 用例自动归零而不是起跑即崩；交付报告按工单「说明」走手动清单降级路径。
  */
 
 // playwright CLI 安装的浏览器位置；找不到就视为"本环境无法跑 e2e"
 const BROWSER_DIR = join(homedir(), '.cache', 'ms-playwright')
 export const browserAvailable = existsSync(BROWSER_DIR)
 
+// 无浏览器时把 testDir 指到空目录：playwright 对空目录报 "no tests found"，
+// 这是受控跳过，而不是 5 条用例逐一起跑崩在 launch 上
+const EMPTY_TEST_DIR = 'e2e/artifacts/.tmp/no-browser'
+if (!browserAvailable) mkdirSync(EMPTY_TEST_DIR, { recursive: true })
+
 export default defineConfig({
-  testDir: 'e2e',
+  testDir: browserAvailable ? 'e2e' : EMPTY_TEST_DIR,
   testMatch: /.*\.e2e\.spec\.ts/,
   timeout: 30_000,
   expect: { timeout: 10_000 },
