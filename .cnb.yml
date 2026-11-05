@@ -41,6 +41,24 @@ main:
           script:
             - pnpm verify:full
 
+  # api_trigger：手动/程序化触发同一套完整验证，参数同 pull_request。
+  # 用途：PR 分支上的收口提交在合并前也想跑一次全量检查。
+  api_trigger:
+    - name: 手动完整验证
+      docker:
+        image: node:22
+      stages:
+        - name: 准备 pnpm
+          script:
+            - corepack enable
+            - corepack prepare pnpm@9.14.4 --activate
+        - name: 安装依赖
+          script:
+            - pnpm install --frozen-lockfile
+        - name: 完整验证
+          script:
+            - pnpm verify:full
+
 # 云原生开发环境：点仓库页面的「云原生开发」按钮时启动
 $:
   vscode:
