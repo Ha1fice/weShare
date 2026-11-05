@@ -104,16 +104,17 @@ pnpm dev
 
 ### 想要"打开就写"的简版入口
 
-在 `.env` 里同时打开两个开关，重启后首屏变成"输个名字就进"，不需要注册登录：
+试用环境用试用模板启动，首屏变成"输个名字就进"，不需要注册登录：
 
 ```bash
-DEVICE_IDENTITY=true        # api：开放 POST /api/v1/auth/device
-VITE_DEVICE_IDENTITY=true   # web：首屏换成 /welcome
+cp .env.trial.example .env
+pnpm dev
 ```
 
 身份由设备指纹 + 本地盐派生，同一浏览器下次打开还是你。**它是可伪造的**，
-只建议内网/试用环境使用；生产请保持关闭，走邮箱密码登录。细节见
-[docs/specs/device-identity.md](docs/specs/device-identity.md)。
+只建议内网/试用环境使用；代码默认值始终关闭，生产走邮箱密码登录。
+细节见 [docs/specs/device-identity.md](docs/specs/device-identity.md) 与
+[docs/deployment.md](docs/deployment.md)。
 
 ---
 

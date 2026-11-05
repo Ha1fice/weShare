@@ -19,6 +19,9 @@ import { useSessionStore } from '@/stores/session.js'
 const session = useSessionStore()
 const router = useRouter()
 
+/** 是否免密模式——决定页脚那条入口是「用账号登录」还是模式说明。 */
+const deviceMode = session.deviceMode
+
 const displayName = ref('')
 const submitting = ref(false)
 const errorMessage = ref('')
@@ -101,9 +104,19 @@ async function onSubmit(): Promise<void> {
         </button>
       </form>
 
-      <p class="mt-6 text-center text-xs text-slate-400">
+      <!--
+        免密模式下这条入口必须藏起来：守卫会把已登录用户从 /login 送回首页，
+        而没有密码账号的人点进去只会看到一张登录表单。
+        要回到密码登录，先「换一个身份」——见下方说明。
+      -->
+      <p v-if="!deviceMode" class="mt-6 text-center text-xs text-slate-400">
         同事邀请你用邮箱开通了账号？
         <RouterLink to="/login" class="text-blue-600 hover:underline">用账号登录</RouterLink>
+      </p>
+      <p v-else class="mt-6 text-center text-xs leading-relaxed text-slate-400">
+        这台机器是免密模式，身份由本机记住。
+        <br />
+        想换回邮箱账号，请让管理员关闭免密开关后重新打开页面。
       </p>
     </div>
   </div>

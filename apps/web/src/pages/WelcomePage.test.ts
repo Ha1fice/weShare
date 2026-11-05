@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -11,7 +11,9 @@ import WelcomePage from '@/pages/WelcomePage.vue'
  * "服务端拒绝时留在页面并把原因说清楚"——这些是组件自己的行为。
  */
 
-function mockFetch(handler: (url: string, init?: RequestInit) => { status: number; body: unknown }) {
+function mockFetch(
+  handler: (url: string, init?: RequestInit) => { status: number; body: unknown },
+) {
   const calls: Array<{ url: string; body: unknown }> = []
   const spy = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url)
@@ -46,6 +48,10 @@ async function mountPage() {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe('首屏输名字', () => {
@@ -122,5 +128,31 @@ describe('首屏输名字', () => {
 
     expect(wrapper.find('[role="alert"]').text()).toContain('账号已被禁用')
     expect(router.currentRoute.value.path).toBe('/welcome')
+  })
+})
+
+/**
+ * 免密模式下页脚那条「用账号登录」必须消失。
+ *
+ * 原因不是审美：守卫会把「已登录 + 访问 /login」送回首页，
+ * 而免密用户根本没有密码账号——那条链接点下去只会回到原处。
+ */
+describe('免密模式的页脚', () => {
+  it('默认（免密开）不出现"用账号登录"入口', async () => {
+    vi.stubEnv('VITE_DEVICE_IDENTITY', 'true')
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).not.toContain('用账号登录')
+    expect(wrapper.find('a[href="/login"]').exists()).toBe(false)
+    // 替代说明要写清楚"为什么回不去"
+    expect(wrapper.text()).toContain('免密模式')
+  })
+
+  it('免密关（密码模式）时保留登录入口', async () => {
+    vi.stubEnv('VITE_DEVICE_IDENTITY', 'false')
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.text()).toContain('用账号登录')
+    expect(wrapper.find('a[href="/login"]').exists()).toBe(true)
   })
 })
