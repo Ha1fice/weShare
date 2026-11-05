@@ -66,16 +66,17 @@ afterEach(() => {
 })
 
 describe('首屏输名字', () => {
-  it('名字为空时按钮禁用', async () => {
+  // 1.0 决策：提交按钮不禁用，点错了才标红（见 LoginPage 同款交互）。
+  // 空名字时给出行内错误提示，而不是让按钮"点不动"。
+  it('名字为空时给出行内提示，填了名字提示消失', async () => {
     const { wrapper } = await mountPage()
-    const button = wrapper.find('button[type="submit"]')
-    expect(button.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('先给自己起个名字')
 
     await wrapper.find('input').setValue('  ')
-    expect(button.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('先给自己起个名字')
 
     await wrapper.find('input').setValue('张三')
-    expect(button.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('先给自己起个名字')
   })
 
   it('提交名字后建立身份并跳到首页', async () => {

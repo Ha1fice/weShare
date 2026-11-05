@@ -15,6 +15,8 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ApiError } from '@/api/client.js'
 import { useSessionStore } from '@/stores/session.js'
+import BrandMark from '@/components/layout/BrandMark.vue'
+import { AppAlert, AppButton, AppField, AppInput } from '@/components/ui/index.js'
 
 const session = useSessionStore()
 const router = useRouter()
@@ -56,68 +58,75 @@ async function onSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-    <div class="w-full max-w-md">
-      <div class="mb-8 text-center">
-        <h1 class="text-2xl font-semibold tracking-tight text-slate-900">weShare</h1>
-        <p class="mt-2 text-sm text-slate-500">团队文档，打开就能写</p>
+  <div class="flex min-h-screen flex-col bg-canvas">
+    <header class="flex h-11 shrink-0 items-center border-b border-line bg-surface px-3">
+      <BrandMark size="sm" />
+      <span v-if="deviceMode" class="ml-2 rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] text-muted">
+        免密模式
+      </span>
+    </header>
+
+    <main class="flex flex-1 items-start justify-center px-5 pb-16 pt-[12vh]">
+      <div class="w-full max-w-[380px]">
+        <h1 class="text-[22px] font-semibold tracking-tight text-ink">进来就能写</h1>
+        <p class="mt-1.5 text-[13px] leading-relaxed text-muted">
+          输一个名字，马上进入你的空间。这台设备会记住你，下次打开直接进去。
+        </p>
+
+        <form class="mt-7" novalidate @submit.prevent="onSubmit">
+          <AppField label="你的名字" html-for="display-name" :error="localError || ''">
+            <AppInput
+              id="display-name"
+              v-model="displayName"
+              :maxlength="NAME_MAX"
+              autocomplete="nickname"
+              autofocus
+              :invalid="localError !== ''"
+              placeholder="例如：张三"
+              @keydown.enter.prevent="onSubmit"
+            />
+          </AppField>
+
+          <p class="mt-1.5 text-[11.5px] text-faint">
+            名字会显示给协作的同事。
+          </p>
+
+          <AppAlert v-if="errorMessage" tone="error" class="mt-4">{{ errorMessage }}</AppAlert>
+
+          <AppButton
+            type="submit"
+            variant="primary"
+            size="lg"
+            class="mt-6 w-full"
+            :disabled="submitting"
+            :loading="submitting"
+          >
+            {{ submitting ? '正在进入…' : '进入' }}
+          </AppButton>
+        </form>
+
+        <!--
+          免密模式下这条入口必须藏起来：守卫会把已登录用户从 /login 送回首页，
+          而没有密码账号的人点进去只会看到一张登录表单。
+          要回到密码登录，先「换一个身份」——见下方说明。
+        -->
+        <p v-if="!deviceMode" class="mt-6 text-center text-[12px] text-muted">
+          同事邀请你用邮箱开通了账号？
+          <RouterLink to="/login" class="text-brand-600 hover:underline focus-ring">用账号登录</RouterLink>
+        </p>
       </div>
+    </main>
 
-      <form
-        class="rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
-        novalidate
-        @submit.prevent="onSubmit"
-      >
-        <label for="display-name" class="block text-sm font-medium text-slate-700">
-          你叫什么名字
-        </label>
-        <input
-          id="display-name"
-          v-model="displayName"
-          type="text"
-          name="displayName"
-          :maxlength="NAME_MAX"
-          autocomplete="nickname"
-          autofocus
-          class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-          placeholder="例如：张三"
-          @keydown.enter.prevent="onSubmit"
-        />
-        <p class="mt-2 text-xs text-slate-400">
-          名字会显示给协作的同事。这台设备会记住你，下次打开直接进。
-        </p>
-
-        <p
-          v-if="errorMessage"
-          role="alert"
-          class="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
-          {{ errorMessage }}
-        </p>
-
-        <button
-          type="submit"
-          :disabled="!canSubmit"
-          class="mt-6 w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {{ submitting ? '正在进入…' : '进入' }}
-        </button>
-      </form>
-
+    <footer class="mx-auto w-full max-w-[380px] space-y-3 pb-8 text-[11.5px] leading-relaxed text-faint">
       <!--
-        免密模式下这条入口必须藏起来：守卫会把已登录用户从 /login 送回首页，
-        而没有密码账号的人点进去只会看到一张登录表单。
-        要回到密码登录，先「换一个身份」——见下方说明。
+        身份提示这句是产品定稿文案，逐字保留：
+        身份记在这台机器上，换设备或清缓存会看到一个全新的空空间（旧内容没丢，在原身份下）。
       -->
-      <p v-if="!deviceMode" class="mt-6 text-center text-xs text-slate-400">
-        同事邀请你用邮箱开通了账号？
-        <RouterLink to="/login" class="text-blue-600 hover:underline">用账号登录</RouterLink>
+      <p v-if="deviceMode">
+        身份记在这台机器上，换设备或清缓存会看到一个全新的空空间（旧内容没丢，在原身份下）。
       </p>
-      <p v-else class="mt-6 text-center text-xs leading-relaxed text-slate-400">
-        这台机器是免密模式，身份由本机记住。
-        <br />
-        想换回邮箱账号，请让管理员关闭免密开关后重新打开页面。
-      </p>
-    </div>
+      <p v-if="deviceMode">试用机 · 免密模式 — 请勿在本机存放真实或敏感资料。</p>
+      <p v-else>密码模式下身份跟随账号，换设备登录即可找回。</p>
+    </footer>
   </div>
 </template>

@@ -10,7 +10,6 @@
  */
 
 import { z } from 'zod'
-import { DOC_SIZE_LIMIT_BYTES } from './index.js'
 
 /**
  * ProseMirror 文档的最小结构校验。
@@ -57,7 +56,7 @@ export interface ContentView {
 }
 
 /** 单文档体积上限（字节）。序列化后超过即拒绝。 */
-export const CONTENT_SIZE_LIMIT_BYTES = DOC_SIZE_LIMIT_BYTES
+export const CONTENT_SIZE_LIMIT_BYTES = 20 * 1024 * 1024
 
 /**
  * 从 PM JSON 里提取纯文本。
