@@ -12,12 +12,9 @@ import { AppError, toErrorBody } from './http/errors.js'
 import { registerAuthRoutes } from './http/auth-routes.js'
 import { registerWorkspaceRoutes } from './http/workspace-routes.js'
 import { registerNodeRoutes } from './http/node-routes.js'
-<<<<<<< HEAD
 import { registerContentRoutes } from './http/content-routes.js'
-=======
 import { registerIdentityRoutes } from './http/identity-routes.js'
 import { IdentityService } from './domain/identity-service.js'
->>>>>>> 5e8d008 (feat(api): 免密身份接口（设备指纹派生账号，开放即用）)
 import { SessionService } from './domain/session-service.js'
 import { WorkspaceService } from './domain/workspace-service.js'
 import { NodeService } from './domain/node-service.js'
