@@ -102,6 +102,20 @@ pnpm dev
 
 完整验证：`pnpm verify:full`（11 个步骤）。
 
+### 想要"打开就写"的简版入口
+
+试用环境用试用模板启动，首屏变成"输个名字就进"，不需要注册登录：
+
+```bash
+cp .env.trial.example .env
+pnpm dev
+```
+
+身份由设备指纹 + 本地盐派生，同一浏览器下次打开还是你。**它是可伪造的**，
+只建议内网/试用环境使用；代码默认值始终关闭，生产走邮箱密码登录。
+细节见 [docs/specs/device-identity.md](docs/specs/device-identity.md) 与
+[docs/deployment.md](docs/deployment.md)。
+
 ---
 
 ## 参与贡献

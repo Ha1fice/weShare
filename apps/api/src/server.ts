@@ -13,6 +13,8 @@ import { registerAuthRoutes } from './http/auth-routes.js'
 import { registerWorkspaceRoutes } from './http/workspace-routes.js'
 import { registerNodeRoutes } from './http/node-routes.js'
 import { registerContentRoutes } from './http/content-routes.js'
+import { registerIdentityRoutes } from './http/identity-routes.js'
+import { IdentityService } from './domain/identity-service.js'
 import { SessionService } from './domain/session-service.js'
 import { WorkspaceService } from './domain/workspace-service.js'
 import { NodeService } from './domain/node-service.js'
@@ -128,6 +130,17 @@ export async function buildServer(
     sessionMaxAgeSeconds: config.SESSION_TTL_DAYS * 24 * 60 * 60,
     allowRegister: config.ALLOW_REGISTER,
   })
+
+  // 免密身份（设备指纹）——只在开关打开时注册，关闭时路径直接 404
+  if (config.DEVICE_IDENTITY) {
+    registerIdentityRoutes(app, {
+      repos,
+      sessions,
+      identity: new IdentityService(repos),
+      secureCookie: config.SECURE_COOKIE,
+      sessionMaxAgeSeconds: config.SESSION_TTL_DAYS * 24 * 60 * 60,
+    })
+  }
 
   // 空间与成员路由
   const workspaceService = new WorkspaceService({ repos })

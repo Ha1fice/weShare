@@ -22,9 +22,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 
 /** 允许入库的例外。 */
 const ALLOWED = [
-  // 模板文件：只有 .env.example，没有真实值
+  // 模板文件：只有占位值，没有真实密钥
   '.env.example',
   '.env.sample',
+  // 试用环境模板（免密模式打开）。是模板不是配置，里面不写真实地址与凭据。
+  '.env.trial.example',
 ]
 
 /** 匹配规则。 */

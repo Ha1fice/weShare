@@ -70,7 +70,7 @@ function userAgent(req: FastifyRequest): string {
 }
 
 /** 转成 API 层的用户视图。 */
-function toCurrentUser(user: {
+export function toCurrentUser(user: {
   id: string
   email: string
   displayName: string

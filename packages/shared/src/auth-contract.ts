@@ -90,3 +90,38 @@ export interface MeResponse {
 export interface AuthResponse {
   user: CurrentUser
 }
+
+// ---------------------------------------------------------------- 免密身份（设备指纹）
+
+/**
+ * 设备指纹对应的身份标识。
+ *
+ * 客户端算好指纹后只发它的哈希（hex），服务端由它派生稳定账号：
+ * 同一浏览器再次打开页面自动回落到同一身份，不需要登录流程。
+ *
+ * 选 64 位 hex 而不是 sha256 全量，是为了在"指纹碰撞概率"与"存储/日志体积"
+ * 之间取一个够用的点：64 位随机碰撞在单机部署规模（万级设备）可忽略，
+ * 同时它仍然是可以低成本伪造的标识——因此**它的安全边界只有"不泄露他人 key"**，
+ * 不能当成凭证使用（详见 docs/specs/weshare-1.0.md 的身份约定）。
+ */
+export const DeviceKeySchema = z
+  .string()
+  .trim()
+  .regex(/^[0-9a-f]{64}$/, '设备标识格式不正确')
+
+/** 还没有登录时，用设备标识 + 名字建立身份（同一设备再次调用即回到同一账号）。 */
+export const DeviceIdentityBodySchema = z.object({
+  deviceKey: DeviceKeySchema,
+  displayName: DisplayNameSchema,
+})
+export type DeviceIdentityBody = z.infer<typeof DeviceIdentityBodySchema>
+
+/** 会话建立后给设备标识绑定名字（改名时同步，供换浏览器找回）。 */
+export const BindIdentityBodySchema = z.object({
+  deviceKey: DeviceKeySchema,
+  displayName: DisplayNameSchema,
+})
+export type BindIdentityBody = z.infer<typeof BindIdentityBodySchema>
+
+/** 设备身份约定的环境开关名——api 与 web 用同一份，避免两侧判断不一致。 */
+export const DEVICE_IDENTITY_FLAG = 'VITE_DEVICE_IDENTITY'
