@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import WelcomePage from '@/pages/WelcomePage.vue'
@@ -26,6 +26,17 @@ function mockFetch(
   })
   vi.stubGlobal('fetch', spy)
   return { calls }
+}
+
+/**
+ * 等某个异步条件成立。
+ *
+ * 这些用例里提交要经过 crypto.subtle.digest、两次 fetch 与路由跳转，
+ * 全链路耗时随机器负载浮动；vi.waitFor 默认 1s 的窗口在 CI 上不够用，
+ * 于是会出现"本地绿、CI 红"的假失败。
+ */
+async function waitFor(assertion: () => void): Promise<void> {
+  await vi.waitFor(assertion, { timeout: 5000, interval: 25 })
 }
 
 async function mountPage() {
@@ -104,7 +115,7 @@ describe('首屏输名字', () => {
     const { wrapper, router } = await mountPage()
     await wrapper.find('input').setValue('张三')
     await wrapper.find('form').trigger('submit')
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/'))
+    await waitFor(() => expect(router.currentRoute.value.path).toBe('/'))
 
     const deviceCall = calls.find((c) => c.url.includes('/auth/device'))
     expect(deviceCall?.body).toMatchObject({ displayName: '张三' })
@@ -124,9 +135,15 @@ describe('首屏输名字', () => {
     const { wrapper, router } = await mountPage()
     await wrapper.find('input').setValue('张三')
     await wrapper.find('form').trigger('submit')
-    await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('账号已被禁用')
+    // 设备 key 要经过 crypto.subtle.digest，比 flushPromises 的一轮微任务慢，
+    // 固定 flushPromises 跑在慢机器上会查到一个还没渲染出来的页面。
+    const alert = () => {
+      const el = wrapper.find('[role="alert"]')
+      expect(el.exists()).toBe(true)
+      expect(el.text()).toContain('账号已被禁用')
+    }
+    await waitFor(alert)
     expect(router.currentRoute.value.path).toBe('/welcome')
   })
 })
