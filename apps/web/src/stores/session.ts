@@ -10,6 +10,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { AuthResponse, CurrentUser, MeResponse } from '@weshare/shared'
 import { api, ApiError, setUnauthorizedHandler } from '../api/client.js'
+import { resolveDeviceKey } from '../lib/device-key.js'
 
 export type SessionStatus = 'unknown' | 'authenticated' | 'anonymous'
 
@@ -19,6 +20,13 @@ export const useSessionStore = defineStore('session', () => {
   const workspaces = ref<MeResponse['workspaces']>([])
   /** 正在与服务器通信（首屏检查、登录中）。 */
   const loading = ref(false)
+  /**
+   * 是否处在免密身份模式（设备指纹）。
+   *
+   * 由 `VITE_DEVICE_IDENTITY` 决定，服务端要同时打开 `DEVICE_IDENTITY`，
+   * 否则身份接口 404 —— 前端会自然回落到登录页。
+   */
+  const deviceMode = import.meta.env.VITE_DEVICE_IDENTITY === 'true'
 
   /** 是否已登录。 */
   function isAuthenticated(): boolean {
@@ -66,6 +74,31 @@ export const useSessionStore = defineStore('session', () => {
     await fetchMe()
   }
 
+  /**
+   * 用设备指纹建立身份（免密模式）。
+   *
+   * 幂等：同一设备重复调用回到同一账号；名字被当作显示名提交，
+   * 用户改主意重新输名字就等于改名。
+   */
+  async function establishIdentity(displayName: string): Promise<void> {
+    const deviceKey = await resolveDeviceKey()
+    const res = await api.post<AuthResponse>('/auth/device', { deviceKey, displayName })
+    user.value = res.user
+    status.value = 'authenticated'
+    await fetchMe()
+  }
+
+  /**
+   * 把当前设备绑到已登录的账号。
+   *
+   * 用在"免密模式打开、但已经有密码账号"的场景：一次绑定之后，
+   * 这台设备下次打开直接落到这个账号。
+   */
+  async function bindDevice(): Promise<void> {
+    const deviceKey = await resolveDeviceKey()
+    await api.post('/auth/device/bind', { deviceKey, displayName: user.value?.displayName ?? '' })
+  }
+
   /** 登出。服务端会话立即失效，本地状态清空。 */
   async function logout(): Promise<void> {
     try {
@@ -103,8 +136,11 @@ export const useSessionStore = defineStore('session', () => {
     loading,
     isAuthenticated,
     fetchMe,
+    deviceMode,
     login,
     register,
+    establishIdentity,
+    bindDevice,
     logout,
     updateDisplayName,
     clear,

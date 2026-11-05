@@ -10,6 +10,12 @@ import AccountPage from '@/pages/AccountPage.vue'
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/welcome',
+    name: 'welcome',
+    component: () => import('@/pages/WelcomePage.vue'),
+    meta: { requiresAuth: false },
+  },
+  {
     path: '/',
     name: 'home',
     component: () => import('@/pages/HomePage.vue'),
@@ -91,11 +97,21 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.requiresAuth && !session.isAuthenticated()) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    // 免密模式下没有"登录"这回事，直接去输名字的首屏
+    return {
+      name: session.deviceMode ? 'welcome' : 'login',
+      query: { redirect: to.fullPath },
+    }
   }
 
   // 已登录时访问登录页 → 送回首页
   if (to.name === 'login' && session.isAuthenticated()) {
+    return { name: 'home' }
+  }
+
+  // 免密模式下的首屏：已登录再去就没意义了（带 redirect 的除外——
+  // 那是从受保护页面被踢过来的，说明本次会话真的失效了）
+  if (to.name === 'welcome' && session.isAuthenticated() && !to.query.redirect) {
     return { name: 'home' }
   }
 
