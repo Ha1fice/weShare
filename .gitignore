@@ -48,3 +48,9 @@ vite.config.ts.timestamp-*
 
 # ---- Prisma 生成的 Client（由 prisma generate 产出，不入库）----
 packages/db/generated/
+
+# ---- e2e 运行产物（playwright）----
+test-results/
+playwright-report/
+blob-report/
+e2e/artifacts/.tmp/
