@@ -202,6 +202,8 @@ tar czf /backup/uploads-$(date +%F).tar.gz /data/uploads
 2. 左上角选空间，左侧目录树里建文档或文件夹。
 3. 两个人同时打开同一篇文档，能互相看到光标和输入——这就是协同生效了。
 
+调试期用 `pnpm -r --parallel dev` 起本地三件套（web 5173 / api 3000 / collab 3100），不需要 nginx；此时 `ALLOWED_ORIGINS=http://localhost:5173`，`SECURE_COOKIE=false`。
+
 试用时值得主动验证的几件事（也是 1.0 的验收项）：
 
 | 验证点 | 怎么做 | 期望 |
