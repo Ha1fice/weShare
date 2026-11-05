@@ -109,6 +109,16 @@ export default tseslint.config(
     },
   },
 
+  // Vue：可选 prop 用 `?:` 声明时，undefined 已经是合法默认值。
+  // 这条规则会逼着把每个可选 prop 都写一遍 `default: undefined`，
+  // 属于噪声而非安全 —— 关掉。
+  {
+    files: ['**/*.vue'],
+    rules: {
+      'vue/require-default-prop': 'off',
+    },
+  },
+
   // 最后由 Prettier 关闭与格式相关的规则
   prettier,
 )

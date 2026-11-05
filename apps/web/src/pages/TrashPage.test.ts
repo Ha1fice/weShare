@@ -98,8 +98,12 @@ async function mountPage() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/w/:workspaceId/trash', name: 'workspace-trash', component: TrashPage },
+      { path: '/w/:workspaceId/trash', name: 'trash', component: TrashPage },
       { path: '/w/:workspaceId', name: 'workspace', component: { template: '<div/>' } },
+      // AppShell 顶栏会渲染这两个入口的链接，路由表里缺失会直接抛错
+      { path: '/w/:workspaceId/settings', name: 'workspace-settings', component: { template: '<div/>' } },
+      { path: '/', name: 'home', component: { template: '<div/>' } },
+      { path: '/account', name: 'account', component: { template: '<div/>' } },
     ],
   })
   await router.push(`/w/${WS_ID}/trash`)
@@ -229,22 +233,30 @@ describe('回收站页面', () => {
     const wrapper = await mountPage()
     await flushPromises()
 
-    // 打开确认弹窗
+    // 打开确认弹窗（AppDialog 用 DialogPortal 渲染，内容不在 wrapper 的 DOM 子树里）
     await wrapper.find('[data-testid="purge-btn"]').trigger('click')
     await flushPromises()
 
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog).toBeTruthy()
+    const input = dialog!.querySelector('#purge-confirm') as HTMLInputElement
+    expect(input).toBeTruthy()
+    const confirmBtn = Array.from(dialog!.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('彻底删除'),
+    ) as HTMLButtonElement
+
     // 标题不匹配时确认按钮不可用
-    const input = wrapper.find('[data-testid="purge-confirm-input"]')
-    expect(input.exists()).toBe(true)
-    await input.setValue('错的标题')
+    input.value = '错的标题'
+    input.dispatchEvent(new Event('input'))
     await flushPromises()
-    expect((wrapper.find('[data-testid="purge-confirm-btn"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(confirmBtn.disabled).toBe(true)
 
     // 输入精确标题后确认
-    await input.setValue('目录')
+    input.value = '目录'
+    input.dispatchEvent(new Event('input'))
     await flushPromises()
-    expect((wrapper.find('[data-testid="purge-confirm-btn"]').element as HTMLButtonElement).disabled).toBe(false)
-    await wrapper.find('[data-testid="purge-confirm-btn"]').trigger('click')
+    expect(confirmBtn.disabled).toBe(false)
+    confirmBtn.click()
     await flushPromises()
 
     expect(calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/nodes/f1/purge'))).toBe(true)
@@ -265,9 +277,16 @@ describe('回收站页面', () => {
 
     await wrapper.find('[data-testid="purge-btn"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-testid="purge-confirm-input"]').setValue('目录')
+
+    const dialog = document.querySelector('[role="dialog"]')!
+    const input = dialog.querySelector('#purge-confirm') as HTMLInputElement
+    input.value = '目录'
+    input.dispatchEvent(new Event('input'))
     await flushPromises()
-    await wrapper.find('[data-testid="purge-confirm-btn"]').trigger('click')
+    const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('彻底删除'),
+    ) as HTMLButtonElement
+    confirmBtn.click()
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain('仅空间所有者或管理员可彻底删除')

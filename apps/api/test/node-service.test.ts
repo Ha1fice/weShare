@@ -360,6 +360,37 @@ describe('改名与可见性', () => {
     const { node } = await svc.updateNode(OWNER, docId, { visibility: 'private' })
     expect(node.visibility).toBe('private')
   })
+
+  it('owner 可以改自己节点的可见性', async () => {
+    const r = await svc.createNode(MEMBER, { workspaceId: WS, type: 'doc', title: 'member 的文档' })
+    const { node } = await svc.updateNode(MEMBER, r.node.id, { visibility: 'private' })
+    expect(node.visibility).toBe('private')
+  })
+
+  it('member 不能把别人的公开文档改成私密（权限提升）', async () => {
+    const docId = await makeDoc('owner 的文档')
+    await expect(
+      svc.updateNode(MEMBER, docId, { visibility: 'private' }),
+    ).rejects.toMatchObject({ status: 403 })
+
+    // 状态未被改动，owner 仍然读得到
+    const { node } = await svc.getNode(docId, OWNER)
+    expect(node.visibility).toBe('workspace')
+  })
+
+  it('空间 admin 也不因管理身份获得他人私密文档的权限（§8.1）', async () => {
+    const docId = await makeDoc('owner 的文档')
+    const { node } = await svc.updateNode(OWNER, docId, { visibility: 'private' })
+    expect(node.visibility).toBe('private')
+    // admin 对他人私密文档不因管理身份获得访问
+    await expect(svc.getNode(docId, ADMIN)).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('member 仍可改他人公开文档的标题（改名不受影响）', async () => {
+    const docId = await makeDoc('旧标题')
+    const { node } = await svc.updateNode(MEMBER, docId, { title: '新标题' })
+    expect(node.title).toBe('新标题')
+  })
 })
 
 describe('移动', () => {
@@ -622,6 +653,29 @@ describe('面包屑与搜索', () => {
   it('根节点没有面包屑', async () => {
     const folderId = await makeFolder('根目录')
     expect(await svc.breadcrumb(folderId, OWNER)).toEqual([])
+  })
+
+  it('面包屑不泄露用户不可读的祖先标题', async () => {
+    const root = await makeFolder('公开根')
+    const secret = await makeFolder('私密中间层', root)
+    const leafId = await makeDoc('公开叶子', secret)
+
+    // 把中间层改成私密（owner 操作，走新授权）
+    await svc.updateNode(OWNER, secret, { visibility: 'private' })
+
+    // member 仍能读到叶子（公开），但不能读到中间层
+    const crumbs = await svc.breadcrumb(leafId, MEMBER)
+    expect(crumbs).toEqual([
+      { id: root, title: '公开根' },
+      { id: secret, title: '…' },
+    ])
+
+    // owner 自己看得到真实标题
+    const ownerCrumbs = await svc.breadcrumb(leafId, OWNER)
+    expect(ownerCrumbs).toEqual([
+      { id: root, title: '公开根' },
+      { id: secret, title: '私密中间层' },
+    ])
   })
 
   it('搜索只返回可读节点', async () => {

@@ -45,6 +45,7 @@ export type {
   UsersRepository,
   VersionsRepository,
   WorkspacesRepository,
+  DocumentSummary,
 } from './repo/interfaces.js'
 
 export { normalizeEmail, normalizeTitle } from './repo/mapping.js'

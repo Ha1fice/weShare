@@ -1,104 +1,92 @@
 <script setup lang="ts">
 /**
- * 首页：空间入口。
+ * 首页 = 空间列表。
  *
- * 有空间 → 自动进入第一个；没有 → 引导创建。
- * Phase 1 不做"最近访问"这类聚合视图。
+ * 之前是"有空间就直接跳进第一个"——那样用户永远看不到自己有哪几个空间，
+ * 也没法在有多个空间时选择。现在做成一次显式的选择，只有恰好一个空间
+ * 且只属于一种情况时才自动进入。
  */
-import { onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ApiError, api } from '@/api/client.js'
-import type { WorkspaceView } from '@weshare/shared'
 import { useSessionStore } from '@/stores/session.js'
+import BrandMark from '@/components/layout/BrandMark.vue'
+import UserMenu from '@/components/layout/UserMenu.vue'
+import { AppButton, AppEmpty } from '@/components/ui/index.js'
+import AppIcon from '@/components/icons/AppIcon.vue'
 
 const session = useSessionStore()
 const router = useRouter()
 
-const newName = ref('')
-const errorMessage = ref('')
-const creating = ref(false)
-
-onMounted(async () => {
-  // 已有空间直接进第一个
-  const first = session.workspaces[0]
-  if (first) {
-    await router.replace({ name: 'workspace', params: { workspaceId: first.id } })
-  }
-})
-
-async function createWorkspace(): Promise<void> {
-  const name = newName.value.trim()
-  if (!name || creating.value) return
-
-  creating.value = true
-  errorMessage.value = ''
-  try {
-    const res = await api.post<{ workspace: WorkspaceView }>('/workspaces', { name })
-    await session.fetchMe()
-    await router.push({ name: 'workspace', params: { workspaceId: res.workspace.id } })
-  } catch (err) {
-    errorMessage.value = err instanceof ApiError ? err.message : '创建失败'
-  } finally {
-    creating.value = false
-  }
+const ROLE_LABEL: Record<string, string> = {
+  owner: '所有者',
+  admin: '管理员',
+  member: '成员',
+  viewer: '只读成员',
 }
 
-async function onLogout(): Promise<void> {
-  await session.logout()
-  await router.push({ name: 'login' })
+const spaces = computed(() => session.workspaces)
+
+function enter(id: string): void {
+  void router.push({ name: 'workspace', params: { workspaceId: id } })
 }
 </script>
 
 <template>
-  <main class="mx-auto max-w-md p-8">
-    <header class="mb-8 flex items-center justify-between">
-      <div>
-        <h1 class="text-xl font-semibold text-gray-900">weShare</h1>
-        <p class="mt-1 text-sm text-gray-500">{{ session.user?.displayName }}</p>
-      </div>
-      <button
-        type="button"
-        class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-        @click="onLogout"
-      >
-        登出
-      </button>
+  <div class="flex min-h-screen flex-col bg-canvas">
+    <header class="flex h-11 shrink-0 items-center border-b border-line bg-surface px-3">
+      <BrandMark size="sm" />
+      <div class="ml-auto"><UserMenu /></div>
     </header>
 
-    <p
-      v-if="errorMessage"
-      role="alert"
-      class="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-    >
-      {{ errorMessage }}
-    </p>
-
-    <!-- 有空间时 onMounted 会立刻跳转，这里只是过渡态 -->
-    <section v-if="session.workspaces.length > 0" class="text-sm text-gray-500">
-      正在进入空间…
-    </section>
-
-    <section v-else class="rounded-lg border border-gray-200 bg-white p-6">
-      <h2 class="mb-1 text-sm font-medium text-gray-900">创建你的第一个空间</h2>
-      <p class="mb-4 text-xs text-gray-500">
-        空间是文档的容器，成员按空间授权。创建后你将成为该空间的所有者。
-      </p>
-
-      <form class="flex gap-2" @submit.prevent="createWorkspace">
-        <input
-          v-model="newName"
-          type="text"
-          placeholder="空间名称"
-          class="min-w-0 flex-1 rounded border border-gray-300 px-3 py-2 text-sm"
-        />
-        <button
-          type="submit"
-          :disabled="creating || !newName.trim()"
-          class="rounded bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:bg-gray-300"
+    <main class="mx-auto w-full max-w-3xl px-5 py-10">
+      <div class="mb-6 flex items-end justify-between gap-4">
+        <div>
+          <h1 class="text-[19px] font-semibold tracking-tight text-ink">工作空间</h1>
+          <p class="mt-1 text-[12.5px] text-muted">
+            你好，{{ session.user?.displayName }}。选择一个空间继续。
+          </p>
+        </div>
+        <AppButton
+          variant="primary"
+          icon="plus"
+          @click="router.push({ name: 'new-workspace' })"
         >
-          {{ creating ? '创建中…' : '创建' }}
+          新建空间
+        </AppButton>
+      </div>
+
+      <div v-if="spaces.length > 0" class="grid gap-2 sm:grid-cols-2">
+        <button
+          v-for="w in spaces"
+          :key="w.id"
+          type="button"
+          class="group flex items-center gap-3 rounded-lg border border-line bg-surface p-3.5 text-left transition hover:border-brand-300 hover:shadow-sm focus-ring"
+          @click="enter(w.id)"
+        >
+          <span
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-50 text-[13px] font-semibold text-brand-700"
+          >
+            {{ w.name.trim().slice(0, 1).toUpperCase() }}
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-[13.5px] font-medium text-ink">{{ w.name }}</span>
+            <span class="mt-0.5 block text-[11.5px] text-faint">{{ ROLE_LABEL[w.role] ?? w.role }}</span>
+          </span>
+          <AppIcon name="chevron-right" :size="14" class="shrink-0 text-faint transition group-hover:text-brand-600" />
         </button>
-      </form>
-    </section>
-  </main>
+      </div>
+
+      <div v-else class="rounded-lg border border-dashed border-line-strong bg-surface">
+        <AppEmpty
+          icon="users"
+          title="还没有工作空间"
+          description="空间是文档的容器，成员按空间授权。创建后你会成为该空间的所有者，可以邀请同事加入。"
+        >
+          <AppButton variant="primary" icon="plus" @click="router.push({ name: 'new-workspace' })">
+            创建第一个空间
+          </AppButton>
+        </AppEmpty>
+      </div>
+    </main>
+  </div>
 </template>

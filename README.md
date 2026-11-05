@@ -38,7 +38,17 @@
 
 ## 当前状态
 
-**架构已确认，代码尚未开始。** 这是诚实的现状描述，不是路线图上的一个待办。
+**Phase 1–3 已实现并可试用**：账号与空间、目录树与文档、正文编辑与自动保存、两人实时协同。
+Phase 4（版本/评论）与 Phase 5（表格）未开始。
+
+诚实的边界（详见 [CODEX_GUIDANCE.md](CODEX_GUIDANCE.md) 的"验证边界"）：
+
+- 自动化验证 402 项，含真 WebSocket 的两个客户端收敛测试与落库测试；
+- **没有**在真实浏览器里做过完整的两人协同人工验收；
+- 图片上传、离线编辑、版本历史、评论、公开分享、SSO 都不在 1.0 范围；
+- 关闭页面可能丢最后 1.2 秒输入（自动保存的防抖窗口，已明示不假装为 0）。
+
+部署给同事试用见 [docs/deploy.md](docs/deploy.md)。
 
 - [总体架构与 MVP 实施方案](docs/architecture/00-项目总体架构与MVP实施方案.md) —— v1.1 已确认，1126 行
   - §12 分阶段验收标准（Phase 1–5，每条都可执行）
@@ -66,7 +76,7 @@
 | 协同            | Yjs + y-prosemirror + Hocuspocus              | MIT              |
 | 前端            | Vue 3 + TypeScript + Reka UI + UnoCSS         | MIT              |
 | 后端            | Fastify 5（REST） + Hocuspocus 4（WebSocket） | MIT              |
-| 数据库          | SQLite + Drizzle ORM                          | MIT / Apache-2.0 |
+| 数据库          | SQLite + Prisma                               | MIT / Apache-2.0 |
 | 表格（Phase 5） | Univer core                                   | Apache-2.0       |
 
 全链路 MIT / Apache-2.0，无 GPL / AGPL。CI 有许可证门禁，GPL / AGPL 依赖硬失败。
@@ -80,10 +90,31 @@
 ```bash
 corepack enable
 pnpm install
+pnpm db:migrate
+pnpm db:seed
 pnpm dev
 ```
 
-详细步骤见 [docs/dev-setup.md](docs/dev-setup.md)（Phase 1 交付）。
+打开 http://127.0.0.1:5173 即可。详细步骤见 [docs/dev-setup.md](docs/dev-setup.md)。
+
+> 协同服务的 `ALLOWED_ORIGINS` 默认需要显式配置，留空会拒绝所有 WebSocket 连接（fail-closed）。
+> 开发期用 `ALLOWED_ORIGINS=http://127.0.0.1:5173`。
+
+完整验证：`pnpm verify:full`（11 个步骤）。
+
+### 想要"打开就写"的简版入口
+
+试用环境用试用模板启动，首屏变成"输个名字就进"，不需要注册登录：
+
+```bash
+cp .env.trial.example .env
+pnpm dev
+```
+
+身份由设备指纹 + 本地盐派生，同一浏览器下次打开还是你。**它是可伪造的**，
+只建议内网/试用环境使用；代码默认值始终关闭，生产走邮箱密码登录。
+细节见 [docs/specs/device-identity.md](docs/specs/device-identity.md) 与
+[docs/deployment.md](docs/deployment.md)。
 
 ---
 

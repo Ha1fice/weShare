@@ -12,9 +12,13 @@ import { AppError, toErrorBody } from './http/errors.js'
 import { registerAuthRoutes } from './http/auth-routes.js'
 import { registerWorkspaceRoutes } from './http/workspace-routes.js'
 import { registerNodeRoutes } from './http/node-routes.js'
+import { registerContentRoutes } from './http/content-routes.js'
+import { registerIdentityRoutes } from './http/identity-routes.js'
+import { IdentityService } from './domain/identity-service.js'
 import { SessionService } from './domain/session-service.js'
 import { WorkspaceService } from './domain/workspace-service.js'
 import { NodeService } from './domain/node-service.js'
+import { ContentService } from './domain/content-service.js'
 import { LoginRateLimiter } from './lib/login-rate-limit.js'
 
 export interface ServerDeps {
@@ -127,6 +131,17 @@ export async function buildServer(
     allowRegister: config.ALLOW_REGISTER,
   })
 
+  // 免密身份（设备指纹）——只在开关打开时注册，关闭时路径直接 404
+  if (config.DEVICE_IDENTITY) {
+    registerIdentityRoutes(app, {
+      repos,
+      sessions,
+      identity: new IdentityService(repos),
+      secureCookie: config.SECURE_COOKIE,
+      sessionMaxAgeSeconds: config.SESSION_TTL_DAYS * 24 * 60 * 60,
+    })
+  }
+
   // 空间与成员路由
   const workspaceService = new WorkspaceService({ repos })
   registerWorkspaceRoutes(app, {
@@ -141,6 +156,15 @@ export async function buildServer(
   registerNodeRoutes(app, {
     repos,
     nodes: nodeService,
+    sessions,
+    secureCookie: config.SECURE_COOKIE,
+  })
+
+  // 文档正文路由（Phase 2：单机编辑 + 自动保存）
+  const contentService = new ContentService({ repos, nodes: nodeService })
+  registerContentRoutes(app, {
+    repos,
+    contents: contentService,
     sessions,
     secureCookie: config.SECURE_COOKIE,
   })

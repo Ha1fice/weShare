@@ -11,11 +11,22 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { AlertDialogRoot, AlertDialogTrigger, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogCancel, AlertDialogAction } from 'reka-ui'
 import { ApiError } from '@/api/client.js'
 import { nodesApi, type TreeNodeItem } from '@/api/nodes.js'
 import { useSessionStore } from '@/stores/session.js'
 import { errorMessage as formatErrorMessage } from '@weshare/shared'
+import AppShell from '@/components/layout/AppShell.vue'
+import {
+  AppAlert,
+  AppButton,
+  AppDialog,
+  AppEmpty,
+  AppField,
+  AppInput,
+  AppSkeleton,
+} from '@/components/ui/index.js'
+import { toast } from '@/components/ui/toast.js'
+import AppIcon from '@/components/icons/AppIcon.vue'
 
 const session = useSessionStore()
 const route = useRoute()
@@ -32,7 +43,10 @@ function messageOf(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.network) return '网络异常，请稍后重试'
     // err.code 已收窄为服务端错误码（network=false 时不会是 NETWORK_ERROR）
-    return formatErrorMessage({ code: err.code, message: err.message } as Parameters<typeof formatErrorMessage>[0])
+    return formatErrorMessage({
+      code: err.code,
+      message: err.message,
+    } as Parameters<typeof formatErrorMessage>[0])
   }
   return '操作失败，请稍后重试'
 }
@@ -109,8 +123,9 @@ async function onRestore(batch: TrashBatch): Promise<void> {
   restoringId.value = batch.rootId
   errorMessage.value = ''
   try {
-    await nodesApi.restore(batch.rootId)
+    const res = await nodesApi.restore(batch.rootId)
     await load()
+    toast(res.affected > 1 ? `已还原 ${res.affected} 项` : `已还原「${batch.title}」`)
   } catch (err) {
     errorMessage.value = messageOf(err)
   } finally {
@@ -128,6 +143,14 @@ function cancelPurge(): void {
   purgeInput.value = ''
 }
 
+/** 弹窗开关（AppDialog 的 v-model:open 需要可写布尔）。 */
+const purgeOpen = computed({
+  get: () => purgeTarget.value !== null,
+  set: (v: boolean) => {
+    if (!v) cancelPurge()
+  },
+})
+
 /** 彻底删除需输入批次根标题精确匹配（防误触，不可逆操作）。 */
 const purgeConfirmEnabled = computed(
   () => purgeTarget.value !== null && purgeInput.value === (purgeTarget.value.title || '未命名'),
@@ -140,8 +163,10 @@ async function onPurge(): Promise<void> {
   errorMessage.value = ''
   try {
     await nodesApi.purge(target.id)
+    const title = target.title || '未命名'
     cancelPurge()
     await load()
+    toast(`「${title}」已彻底删除`)
   } catch (err) {
     errorMessage.value = messageOf(err)
     cancelPurge()
@@ -150,130 +175,143 @@ async function onPurge(): Promise<void> {
   }
 }
 
+function fmtTime(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function backToWorkspace(): void {
   void router.push({ name: 'workspace', params: { workspaceId: workspaceId.value } })
 }
 </script>
 
 <template>
-  <div class="flex h-screen flex-col">
-    <!-- 顶栏 -->
-    <header class="flex items-center gap-3 border-b border-gray-200 px-4 py-2.5">
-      <span class="text-sm font-semibold text-gray-900">weShare</span>
-      <button
-        type="button"
-        class="rounded border border-gray-300 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50"
-        @click="backToWorkspace"
-      >
-        返回空间
-      </button>
-      <span class="text-sm text-gray-500">回收站</span>
-      <span class="ml-auto text-sm text-gray-500">{{ session.user?.displayName }}</span>
-    </header>
-
-    <main class="min-w-0 flex-1 overflow-auto p-4">
-      <p
-        v-if="errorMessage"
-        role="alert"
-        class="mb-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-      >
-        {{ errorMessage }}
-      </p>
-
-      <div v-if="loading" data-testid="trash-loading" class="py-8 text-center text-sm text-gray-500">
-        加载中…
+  <AppShell>
+    <main class="mx-auto w-full max-w-4xl px-5 py-6">
+      <div class="mb-5 flex items-end justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-1.5">
+            <button
+              type="button"
+              class="rounded text-muted transition-colors hover:text-ink focus-ring"
+              aria-label="返回工作区"
+              @click="backToWorkspace"
+            >
+              <AppIcon name="chevron-left" :size="15" />
+            </button>
+            <h1 class="text-[17px] font-semibold tracking-tight text-ink">回收站</h1>
+          </div>
+          <p class="mt-1 pl-5 text-[12px] text-muted">
+            只显示你有权限管理的已删除内容。还原会把整批内容放回原来的位置。
+          </p>
+        </div>
+        <AppButton size="sm" icon="restore" :disabled="loading" @click="load">刷新</AppButton>
       </div>
 
-      <div
-        v-else-if="batches.length === 0"
-        data-testid="trash-empty"
-        class="rounded border border-dashed border-gray-200 py-10 text-center text-sm text-gray-500"
-      >
-        回收站是空的
+      <AppAlert v-if="errorMessage" tone="error" class="mb-3">
+        <span role="alert">{{ errorMessage }}</span>
+        <button type="button" class="ml-2 underline" @click="load">重试</button>
+      </AppAlert>
+
+      <div v-if="loading" data-testid="trash-loading" class="space-y-2">
+        <AppSkeleton v-for="i in 4" :key="i" height="40px" rounded="6px" />
       </div>
 
-      <ul v-else data-testid="trash-list" class="divide-y divide-gray-100 rounded border border-gray-200 bg-white">
+      <div v-else-if="batches.length === 0" data-testid="trash-empty" class="rounded-lg border border-line bg-surface">
+        <AppEmpty
+          icon="trash"
+          title="回收站是空的"
+          description="被删除的文档和文件夹会先来到这里，方便你在误删后还原。"
+        >
+          <AppButton @click="backToWorkspace">回到工作区</AppButton>
+        </AppEmpty>
+      </div>
+
+      <ul
+        v-else
+        data-testid="trash-list"
+        class="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface"
+      >
         <li
           v-for="batch in batches"
           :key="batch.rootId"
           data-testid="trash-batch"
-          class="flex items-center gap-3 px-4 py-3"
+          class="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-subtle/60"
         >
+          <AppIcon
+            :name="batch.root.type === 'folder' ? 'folder' : 'file'"
+            :size="14"
+            :class="batch.root.type === 'folder' ? 'text-[#c9a24a]' : 'text-faint'"
+          />
           <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-medium text-gray-900">{{ batch.title }}</p>
-            <p class="mt-0.5 text-xs text-gray-500">
-              {{ batch.count }} 项 · 删除于 {{ new Date(batch.deletedAt).toLocaleString() }}
+            <p class="truncate text-[13px] text-ink">{{ batch.title }}</p>
+            <p class="mt-0.5 text-[11px] text-faint">
+              {{ batch.count }} 项 · 删除于 {{ fmtTime(batch.deletedAt) }}
             </p>
           </div>
 
-          <button
-            type="button"
+          <AppButton
+            size="sm"
+            icon="restore"
             data-testid="restore-btn"
-            class="rounded border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-            :disabled="restoringId === batch.rootId"
+            :loading="restoringId === batch.rootId"
+            :disabled="restoringId !== null"
             @click="onRestore(batch)"
           >
-            {{ restoringId === batch.rootId ? '还原中…' : '还原' }}
-          </button>
-
-          <AlertDialogRoot v-if="canPurge">
-            <AlertDialogTrigger as-child>
-              <button
-                type="button"
-                data-testid="purge-btn"
-                class="rounded border border-red-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50"
-                @click="openPurge(batch)"
-              >
-                彻底删除
-              </button>
-            </AlertDialogTrigger>
-
-            <AlertDialogContent
-              class="fixed left-1/2 top-1/2 z-50 w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-200 bg-white p-5 shadow-lg"
-            >
-              <AlertDialogTitle class="text-base font-semibold text-gray-900">
-                彻底删除「{{ purgeTarget?.title || '未命名' }}」？
-              </AlertDialogTitle>
-              <AlertDialogDescription class="mt-1 text-sm text-gray-600">
-                此操作不可恢复，将连同全部子项一起删除。输入
-                <span class="font-medium text-gray-900">{{ purgeTarget?.title || '未命名' }}</span>
-                以确认。
-              </AlertDialogDescription>
-
-              <input
-                v-model="purgeInput"
-                data-testid="purge-confirm-input"
-                type="text"
-                class="mt-3 w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                placeholder="输入标题以确认"
-              />
-
-              <div class="mt-4 flex justify-end gap-2">
-                <AlertDialogCancel as-child>
-                  <button
-                    type="button"
-                    data-testid="purge-cancel-btn"
-                    class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    取消
-                  </button>
-                </AlertDialogCancel>
-                <AlertDialogAction as-child>
-                  <button
-                    type="button"
-                    data-testid="purge-confirm-btn"
-                    class="rounded bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700 disabled:opacity-40"
-                    :disabled="!purgeConfirmEnabled || purging"
-                    @click="onPurge"
-                  >
-                    {{ purging ? '删除中…' : '彻底删除' }}
-                  </button>
-                </AlertDialogAction>
-              </div>
-            </AlertDialogContent>
-          </AlertDialogRoot>
+            还原
+          </AppButton>
+          <AppButton
+            v-if="canPurge"
+            size="sm"
+            variant="danger-ghost"
+            icon="trash"
+            data-testid="purge-btn"
+            :disabled="restoringId !== null"
+            @click="openPurge(batch)"
+          >
+            彻底删除
+          </AppButton>
         </li>
       </ul>
+
+      <p v-if="!loading && batches.length > 0 && !canPurge" class="mt-3 text-[11.5px] text-faint">
+        彻底删除仅空间所有者与管理员可用。
+      </p>
     </main>
-  </div>
+
+    <!-- 彻底删除：要求手打批次根标题 -->
+    <AppDialog
+      v-model:open="purgeOpen"
+      title="彻底删除，无法恢复"
+      tone="danger"
+      icon="alert"
+      confirm-text="彻底删除"
+      :loading="purging"
+      :confirm-disabled="!purgeConfirmEnabled || purging"
+      @confirm="onPurge"
+    >
+      <template #description>
+        「{{ purgeTarget?.title || '未命名' }}」
+        <template v-if="purgeTarget?.type === 'folder'">及其所有子项</template>
+        的正文、版本与协同状态都会被从数据库里删掉，不能还原。
+      </template>
+
+      <AppField
+        :label="`请输入「${purgeTarget?.title || '未命名'}」以确认`"
+        html-for="purge-confirm"
+        :hint="purgeConfirmEnabled ? '' : '标题必须完全一致（含空格）'"
+      >
+        <AppInput
+          id="purge-confirm"
+          v-model="purgeInput"
+          data-testid="purge-confirm-input"
+          :placeholder="purgeTarget?.title || '未命名'"
+          autocomplete="off"
+          @keyup.enter="onPurge"
+        />
+      </AppField>
+    </AppDialog>
+  </AppShell>
 </template>

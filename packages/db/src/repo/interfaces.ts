@@ -61,6 +61,14 @@ export interface UsersRepository {
    */
   create(input: CreateUserInput): Promise<User>
 
+  /**
+   * 按邮箱精确查（免密身份用它把设备指纹映射到稳定账号）。
+   *
+   * 与 findByEmail 的区别：这是**按已知的内部地址取账号**，不是面向用户的登录入口，
+   * 因此不做防枚举考量——调用方必须自己保证地址不是用户输入。
+   */
+  findByEmailLower(emailLower: string): Promise<User | null>
+
   /** 更新显示名。 */
   updateDisplayName(id: string, displayName: string): Promise<User>
 
@@ -230,10 +238,35 @@ export interface ContentsRepository {
   save(input: SaveContentInput & { expectedRevision?: number }): Promise<DocumentContent>
 
   /**
-   * 保存协同落库结果。
-   * 正文优先——派生失败不得回滚正文（架构文档 §5.4）。
+   * 保存协同落库结果（Y.Doc 事实源 + 派生镜像）。
+   *
+   * **无条件写入**：协同一旦启用，这里就是正文的唯一写入路径，
+   * 每次落库都必须真的落下去。派生失败不得回滚 yjsState（架构文档 §5.4）。
+   *
+   * @param expectYjsState `'null'` 时带 CAS 语义：只有当前 yjsState 仍为 NULL
+   *   才写，用于并发迁移的抢锁（架构文档 §13 R16）。
+   * @returns `claimed=false` 表示 CAS 未命中（别人先迁移了），调用方应丢弃
+   *   自己的迁移副本。不带 `expectYjsState` 时恒为 `claimed=true`。
    */
-  saveCollaborative(input: SaveContentInput): Promise<DocumentContent>
+  saveCollaborative(
+    input: SaveContentInput & { expectYjsState?: 'null' | 'any' },
+  ): Promise<{ claimed: boolean }>
+
+  /**
+   * 批量取摘要（列表页用）。
+   *
+   * 只 select `text_preview / char_count / revision` 三列——正文可能很大，
+   * 列表页把它整篇拉回来是不必要的 IO。
+   */
+  listSummaries(nodeIds: string[]): Promise<DocumentSummary[]>
+}
+
+/** 列表页需要的正文摘要。 */
+export interface DocumentSummary {
+  nodeId: string
+  textPreview: string | null
+  charCount: number
+  revision: number
 }
 
 /**

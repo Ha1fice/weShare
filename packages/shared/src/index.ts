@@ -128,12 +128,18 @@ export {
   RegisterBodySchema,
   LoginBodySchema,
   UpdateMeBodySchema,
+  DeviceKeySchema,
+  DeviceIdentityBodySchema,
+  BindIdentityBodySchema,
+  DEVICE_IDENTITY_FLAG,
 } from './auth-contract.js'
 
 export type {
   RegisterBody,
   LoginBody,
   UpdateMeBody,
+  DeviceIdentityBody,
+  BindIdentityBody,
   CurrentUser,
   MeResponse,
   AuthResponse,
@@ -176,6 +182,16 @@ export type {
   TreeNodeView,
   BreadcrumbItem,
 } from './node-contract.js'
+
+// ---------------------------------------------------------------- 文档正文契约
+
+export {
+  ProseMirrorDocSchema,
+  SaveContentBodySchema,
+  CONTENT_SIZE_LIMIT_BYTES,
+  extractPlainText,
+} from './content-contract.js'
+export type { ProseMirrorDoc, SaveContentBody, ContentView } from './content-contract.js'
 
 // ---------------------------------------------------------------- 错误文案兜底
 

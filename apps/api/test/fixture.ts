@@ -30,7 +30,7 @@ export interface ApiTestContext {
  * 建一个带完整结构的临时库 + 一个装配好的 Fastify 实例。
  */
 export async function createApiTestContext(
-  options: { allowRegister?: boolean } = {},
+  options: { allowRegister?: boolean; deviceIdentity?: boolean } = {},
 ): Promise<ApiTestContext> {
   const { db, dbPath } = await createTestDatabase()
 
@@ -38,6 +38,7 @@ export async function createApiTestContext(
     NODE_ENV: 'test',
     DB_PATH: dbPath,
     ALLOW_REGISTER: options.allowRegister === false ? 'false' : 'true',
+    DEVICE_IDENTITY: options.deviceIdentity ? 'true' : 'false',
     SECURE_COOKIE: 'false',
     SESSION_TTL_DAYS: '30',
     LOG_LEVEL: 'silent',

@@ -5,8 +5,16 @@ import LoginPage from '@/pages/LoginPage.vue'
 import WorkspacePage from '@/pages/WorkspacePage.vue'
 import DocPage from '@/pages/DocPage.vue'
 import WorkspaceSettingsPage from '@/pages/WorkspaceSettingsPage.vue'
+import NewWorkspacePage from '@/pages/NewWorkspacePage.vue'
+import AccountPage from '@/pages/AccountPage.vue'
 
 const routes: RouteRecordRaw[] = [
+  {
+    path: '/welcome',
+    name: 'welcome',
+    component: () => import('@/pages/WelcomePage.vue'),
+    meta: { requiresAuth: false },
+  },
   {
     path: '/',
     name: 'home',
@@ -32,15 +40,27 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
-    path: '/w/:workspaceId/settings',
-    name: 'workspace-settings',
-    component: WorkspaceSettingsPage,
+    path: '/new',
+    name: 'new-workspace',
+    component: NewWorkspacePage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/account',
+    name: 'account',
+    component: AccountPage,
     meta: { requiresAuth: true },
   },
   {
     path: '/w/:workspaceId/trash',
-    name: 'workspace-trash',
+    name: 'trash',
     component: () => import('@/pages/TrashPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/w/:workspaceId/settings',
+    name: 'workspace-settings',
+    component: WorkspaceSettingsPage,
     meta: { requiresAuth: true },
   },
   {
@@ -77,11 +97,21 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.requiresAuth && !session.isAuthenticated()) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    // 免密模式下没有"登录"这回事，直接去输名字的首屏
+    return {
+      name: session.deviceMode ? 'welcome' : 'login',
+      query: { redirect: to.fullPath },
+    }
   }
 
   // 已登录时访问登录页 → 送回首页
   if (to.name === 'login' && session.isAuthenticated()) {
+    return { name: 'home' }
+  }
+
+  // 免密模式下的首屏：已登录再去就没意义了（带 redirect 的除外——
+  // 那是从受保护页面被踢过来的，说明本次会话真的失效了）
+  if (to.name === 'welcome' && session.isAuthenticated() && !to.query.redirect) {
     return { name: 'home' }
   }
 
