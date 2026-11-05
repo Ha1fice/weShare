@@ -234,6 +234,31 @@ export interface ContentsRepository {
    * 正文优先——派生失败不得回滚正文（架构文档 §5.4）。
    */
   saveCollaborative(input: SaveContentInput): Promise<DocumentContent>
+
+  /**
+   * 抢占"迁入协同"的资格：只有 yjsState 仍为 NULL 时才写入。
+   *
+   * @returns true 表示本次写入生效；false 表示已被别的进程抢先迁移。
+   *
+   * 这是 Phase 2→3 迁移桥的跨进程安全网（架构文档 §13 R16）。
+   */
+  claimCollaborative(input: SaveContentInput): Promise<boolean>
+
+  /**
+   * 批量取摘要（列表页用）。
+   *
+   * 只 select `text_preview / char_count / revision` 三列——正文可能很大，
+   * 列表页把它整篇拉回来是不必要的 IO。
+   */
+  listSummaries(nodeIds: string[]): Promise<DocumentSummary[]>
+}
+
+/** 列表页需要的正文摘要。 */
+export interface DocumentSummary {
+  nodeId: string
+  textPreview: string | null
+  charCount: number
+  revision: number
 }
 
 /**

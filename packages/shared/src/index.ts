@@ -176,3 +176,13 @@ export type {
   TreeNodeView,
   BreadcrumbItem,
 } from './node-contract.js'
+
+// ---------------------------------------------------------------- 文档正文契约
+
+export {
+  ProseMirrorDocSchema,
+  SaveContentBodySchema,
+  CONTENT_SIZE_LIMIT_BYTES,
+  extractPlainText,
+} from './content-contract.js'
+export type { ProseMirrorDoc, SaveContentBody, ContentView } from './content-contract.js'

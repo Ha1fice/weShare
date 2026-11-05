@@ -5,6 +5,8 @@ import LoginPage from '@/pages/LoginPage.vue'
 import WorkspacePage from '@/pages/WorkspacePage.vue'
 import DocPage from '@/pages/DocPage.vue'
 import WorkspaceSettingsPage from '@/pages/WorkspaceSettingsPage.vue'
+import NewWorkspacePage from '@/pages/NewWorkspacePage.vue'
+import AccountPage from '@/pages/AccountPage.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -29,6 +31,24 @@ const routes: RouteRecordRaw[] = [
     path: '/w/:workspaceId',
     name: 'workspace',
     component: WorkspacePage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/new',
+    name: 'new-workspace',
+    component: NewWorkspacePage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/account',
+    name: 'account',
+    component: AccountPage,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/w/:workspaceId/trash',
+    name: 'trash',
+    component: () => import('@/pages/TrashPage.vue'),
     meta: { requiresAuth: true },
   },
   {
