@@ -45,14 +45,17 @@
 ✅ 全部通过（11 个步骤）
 ```
 
-**测试分布**：web 5 文件 48 例（含 TrashPage 11 例、session 3 例、LoginPage 14 例）、api 10 文件 197 例、shared 2 文件 20 例。注意 shared 的 20 例中 16 例是既有 password-policy 用例，S1 实际新增 4 例（见上表）；此处为 S6 时点的全量数字，非 S1 单项产出。
 
-**测试数口径说明**：api 侧报告的 197 例是 vitest 实跑数——参数化用例（`it.each`）在运行时展开为多条，故大于静态 `it()` 声明数；按静态声明数口径 api 为 162 例。两者都对，只是口径不同，非虚报。
+**测试数口径说明**：api 例数是 vitest 实跑数——参数化用例（`it.each`）在运行时展开为多条，故大于静态 `it()` 声明数（S6 时点静态 162 vs 实跑 197）。两者口径不同，非虚报。本节出现的历史数字均为**时点快照**，与当前实测的差异是后续返工提交累积的结果，请以下方「当前实测」为准，不要跨时点对账。
+
+**当前实测（F1–F4 返工完成后，`npc/1-phase1-trash-acceptance` 分支）**：web 9 文件 80 例（TrashPage 14 例、LoginPage 15 例）、api 12 文件 229 例、shared 2 文件 21 例；`pnpm verify:full` 11 步全绿，`pnpm -r typecheck` / `lint` 7 包全过。这是本报告的权威数字。
+
+**测试分布（S6 时点快照）**：web 5 文件 48 例（含 TrashPage 11 例、session 3 例、LoginPage 14 例）、api 10 文件 197 例、shared 2 文件 20 例。其中 shared 的 20 例里 16 例是既有 password-policy 用例，S1 实际新增 4 例（见上表）；此处为 S6 时点的全量数字，非 S1 单项产出。
 
 **合流更新（PR #13 合入 main 后的返工提交）**：
 - `session.ts` 401 统一跳转目标按 `deviceMode` 分流：免密模式送 `welcome`（带 redirect），密码模式送 `login`——免密用户没有"登录"这回事，一刀切跳 login 会送进不该出现的下车口。新增 2 项单测（免密分流 + welcome 页防循环），session 用例 3→5。
 - `errorMessage()` **目前只有回收站页面（`TrashPage.vue`）接入** shared 兜底，S1 不是全站覆盖。其余页面仍是 `err instanceof ApiError ? err.message : '…'` 的写法，**共 12 处绕开兜底待统一改造（另开工单）**：`WorkspacePage.vue` 5 处、`DocPage.vue` 3 处、`AccountPage.vue`/`LoginPage.vue`/`NewWorkspacePage.vue`/`WorkspaceSettingsPage.vue`/`WelcomePage.vue` 各 1 处。此处曾写成"已接入全部错误出口，S1 为全站覆盖"，不成立，已更正。
-- web 用例数：9 文件 76 例（含合流带入的 WelcomePage 5 例等）。
+- web 用例数：S6 时点为 5 文件 48 例，合流后曾为 9 文件 76 例，均已并入上方「当前实测」，不再单列。
 
 **`pnpm -r typecheck` / `pnpm -r lint`**：全部包通过（verify:full 的 code 组已含，独立复跑亦绿）。
 
