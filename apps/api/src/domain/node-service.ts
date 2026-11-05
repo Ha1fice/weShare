@@ -137,7 +137,14 @@ export class NodeService {
    * @throws 404 节点不存在或用户不是空间成员
    * @throws 403 是空间成员但对该节点权限不足
    */
-  private async requireRole(
+  /**
+   * 判定用户对节点的有效角色，不足则抛错。
+   *
+   * 对其它领域服务（如 ContentService）公开，是为了让"能不能写正文"
+   * 与"能不能改名"用**同一条判定**——两处各写一份必然出现
+   * "能改名但存不进正文"这类诡异不一致。
+   */
+  async requireRole(
     nodeId: string,
     userId: string,
     required: Role,

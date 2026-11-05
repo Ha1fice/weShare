@@ -12,9 +12,11 @@ import { AppError, toErrorBody } from './http/errors.js'
 import { registerAuthRoutes } from './http/auth-routes.js'
 import { registerWorkspaceRoutes } from './http/workspace-routes.js'
 import { registerNodeRoutes } from './http/node-routes.js'
+import { registerContentRoutes } from './http/content-routes.js'
 import { SessionService } from './domain/session-service.js'
 import { WorkspaceService } from './domain/workspace-service.js'
 import { NodeService } from './domain/node-service.js'
+import { ContentService } from './domain/content-service.js'
 import { LoginRateLimiter } from './lib/login-rate-limit.js'
 
 export interface ServerDeps {
@@ -141,6 +143,15 @@ export async function buildServer(
   registerNodeRoutes(app, {
     repos,
     nodes: nodeService,
+    sessions,
+    secureCookie: config.SECURE_COOKIE,
+  })
+
+  // 文档正文路由（Phase 2：单机编辑 + 自动保存）
+  const contentService = new ContentService({ repos, nodes: nodeService })
+  registerContentRoutes(app, {
+    repos,
+    contents: contentService,
     sessions,
     secureCookie: config.SECURE_COOKIE,
   })

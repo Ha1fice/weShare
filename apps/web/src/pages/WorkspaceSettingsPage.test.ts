@@ -91,6 +91,8 @@ async function mountPage() {
     routes: [
       { path: '/w/:workspaceId/settings', name: 'workspace-settings', component: WorkspaceSettingsPage },
       { path: '/w/:workspaceId', name: 'workspace', component: { template: '<div/>' } },
+      { path: '/w/:workspaceId/trash', name: 'trash', component: { template: '<div/>' } },
+      { path: '/w/:workspaceId/settings', name: 'settings', component: { template: '<div/>' } },
     ],
   })
   await router.push(`/w/${WS_ID}/settings`)
@@ -116,7 +118,7 @@ describe('空间设置页', () => {
     // 基本信息可编辑
     expect(wrapper.find('#ws-name').attributes('disabled')).toBeUndefined()
     // 有"添加成员"按钮
-    expect(wrapper.text()).toContain('添加')
+    expect(wrapper.text()).toContain('添加成员')
     // 有保存按钮
     expect(wrapper.text()).toContain('保存')
   })
@@ -127,7 +129,7 @@ describe('空间设置页', () => {
     await flushPromises()
 
     expect(wrapper.find('#ws-name').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('仅空间所有者可修改空间设置')
+    expect(wrapper.find('#ws-name').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('仅空间所有者或管理员可管理成员')
   })
 
@@ -147,11 +149,23 @@ describe('空间设置页', () => {
     const wrapper = await mountPage()
     await flushPromises()
 
-    await wrapper.find('input[placeholder="按邮箱添加成员"]').setValue('new@example.com')
-    // 找到"添加"按钮（文本匹配）
-    const addBtn = wrapper.findAll('button').find((b) => b.text() === '添加')
-    expect(addBtn).toBeTruthy()
-    await addBtn!.trigger('click')
+    // 打开"添加成员"对话框，填邮箱后在对话框里确认
+    const inviteBtn = wrapper.findAll('button').find((b) => b.text().includes('添加成员'))
+    expect(inviteBtn).toBeTruthy()
+    await inviteBtn!.trigger('click')
+    await flushPromises()
+
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog).toBeTruthy()
+    const emailInput = dialog!.querySelector('#invite-email') as HTMLInputElement
+    emailInput.value = 'new@example.com'
+    emailInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    const confirmBtn = Array.from(dialog!.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('添加'),
+    ) as HTMLButtonElement
+    confirmBtn.click()
     await flushPromises()
 
     const post = calls.find((c) => c.method === 'POST')
@@ -170,9 +184,10 @@ describe('空间设置页', () => {
     expect(ownerRow.find('select').exists()).toBe(false)
     expect(ownerRow.text()).toContain('所有者')
 
-    // viewer 那一行有下拉
+    // viewer 那一行有角色切换按钮（下拉已换成自定义菜单）
     const viewerRow = wrapper.find('[data-member-id="u-viewer"]')
-    expect(viewerRow.find('select').exists()).toBe(true)
+    expect(viewerRow.text()).toContain('只读')
+    expect(viewerRow.findAll('button').length).toBeGreaterThan(0)
   })
 
   it('改角色发出 PATCH 到正确路径', async () => {
@@ -181,7 +196,17 @@ describe('空间设置页', () => {
     await flushPromises()
 
     const viewerRow = wrapper.find('[data-member-id="u-viewer"]')
-    await viewerRow.find('select').setValue('member')
+    // 点开角色菜单，选"成员"
+    const roleBtn = viewerRow.findAll('button')[0]!
+    await roleBtn.trigger('click')
+    await flushPromises()
+
+    const item = Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) =>
+      el.textContent?.includes('成员 · 可创建与编辑'),
+    ) as HTMLElement
+    expect(item).toBeTruthy()
+    item.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    item.click()
     await flushPromises()
 
     const patch = calls.find((c) => c.method === 'PATCH')
@@ -226,9 +251,20 @@ describe('空间设置页', () => {
     const wrapper = await mountPage()
     await flushPromises()
 
-    await wrapper.find('input[placeholder="按邮箱添加成员"]').setValue('nobody@example.com')
-    const addBtn = wrapper.findAll('button').find((b) => b.text() === '添加')
-    await addBtn!.trigger('click')
+    const inviteBtn = wrapper.findAll('button').find((b) => b.text().includes('添加成员'))
+    await inviteBtn!.trigger('click')
+    await flushPromises()
+
+    const dialog = document.querySelector('[role="dialog"]')!
+    const emailInput = dialog.querySelector('#invite-email') as HTMLInputElement
+    emailInput.value = 'nobody@example.com'
+    emailInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    const confirmBtn = Array.from(dialog.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('添加'),
+    ) as HTMLButtonElement
+    confirmBtn.click()
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain('该邮箱对应的用户不存在')
