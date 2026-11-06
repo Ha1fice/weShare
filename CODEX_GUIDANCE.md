@@ -14,8 +14,8 @@
 | **代码** | `D:\origin\code\weShare`；远端 `origin` = GitHub `Ha1fice/weShare`（**唯一源头**）；`cnb` = cnb.cool（**2026-11-06 起暂停使用**） |
 | **分支** | `main` = 已交付基线；`npc/1-phase1-trash-acceptance` = 本轮未合并工作（M1/M2/N1） |
 | **最后验证** | 2026-11-06 · `pnpm verify:full` · **11 步全绿**（在 `npc/1-phase1-trash-acceptance` 上跑；e2e 组因本机无浏览器按降级路径显式跳过，不计入通过） |
-| **未推送** | 两个分支都只在本地：`main` 有文档提交、`npc/...` 有 3 个代码提交；**GitHub 也没推** |
-| **下一步** | ① 把 `main` 合进 `npc/...` → 推 GitHub → 开 PR；② Issue #10 人工浏览器验收；③ Phase 2（附件/搜索/最近访问/版本历史） |
+| **未推送** | **两个分支都只在本地，远端一个提交都没收到**。核实：`git log --oneline origin/main..HEAD` |
+| **下一步** | ① 推 `npc/1-phase1-trash-acceptance` 到 GitHub → 开 PR 合入 `main`（需用户授权）；② Issue #10 人工浏览器验收；③ Phase 2（附件/搜索/最近访问/版本历史） |
 
 **开工三步**（照抄即可，30 秒进入状态）：
 
