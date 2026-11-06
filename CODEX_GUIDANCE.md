@@ -3,6 +3,62 @@
 > 由执行模型（CodeBuddy）维护。**这里不是待办审批清单，是决策记录。**
 > 除下列「需要人拍板」四类之外的实现与产品问题，由执行模型直接决定并记录在此。
 
+## 交接区（换模型/换会话从这里开始，收工前必须更新）
+
+> 目标是：**任何模型在任何进度点接手，读完本节就能开工**，不需要翻会话记录。
+> 每次交付/收工前更新这六行，别让它们过期。
+
+| 项 | 当前值（2026-11-06） |
+|---|---|
+| **项目** | weShare —— 企业私有化协同在线文档平台（Vue 3 + Fastify + Prisma 7/SQLite + Yjs/Hocuspocus） |
+| **代码** | `D:\origin\code\weShare`；远端 `origin` = GitHub `Ha1fice/weShare`（**唯一源头**）；`cnb` = cnb.cool（**2026-11-06 起暂停使用**） |
+| **分支** | `main` = 已交付基线；`npc/1-phase1-trash-acceptance` = 本轮未合并工作（M1/M2/N1） |
+| **最后验证** | 2026-11-06 · `pnpm verify:full` · **11 步全绿**（在 `npc/1-phase1-trash-acceptance` 上跑；e2e 组因本机无浏览器按降级路径显式跳过，不计入通过） |
+| **未推送** | 两个分支都只在本地：`main` 有文档提交、`npc/...` 有 3 个代码提交；**GitHub 也没推** |
+| **下一步** | ① 把 `main` 合进 `npc/...` → 推 GitHub → 开 PR；② Issue #10 人工浏览器验收；③ Phase 2（附件/搜索/最近访问/版本历史） |
+
+**开工三步**（照抄即可，30 秒进入状态）：
+
+```bash
+cd D:/origin/code/weShare
+git status && git log --oneline -5          # 现在在哪个分支、有没有未提交的东西
+pnpm install && pnpm verify:full            # 依赖与基线；红了先修再动新代码
+node scripts/verify.mjs --list              # 门禁清单，改哪块就知道该跑哪组
+```
+
+**读文档的顺序**：本节 → 下方「状态（最新）」→ `docs/architecture/` 对应章节 →
+`docs/reports/phase1.md`（交付口径与"验证边界"）→ 代码。
+
+**文档地图（冲突时以左列为准）**
+
+| 想知道什么 | 看哪份 |
+|---|---|
+| 现在做到哪、下一步、有没有没推的东西 | **本节**（唯一权威） |
+| 为什么这么设计、不变式、已否决的方案 | 本文档决策记录 + `docs/architecture/` |
+| 怎么起服务、环境变量、部署 | `docs/dev-setup.md`、`docs/deploy.md` |
+| 哪些验证过、哪些只是"看起来能跑" | `docs/reports/phase1.md` §「验证边界」 |
+| 人工验收清单（9 组 30 条） | `docs/acceptance/phase1.md` |
+| 风险与待复核项 | 架构文档 §15.2 / §15.3 |
+
+**硬规则（违反即返工，不需要讨论）**
+
+1. **不跨阶段实现**；每阶段做完停下来复核。
+2. 权限判定只有两处实现：`apps/api/src/domain/workspace-service.ts`（空间）与
+   `node-service.ts`（节点）。前端只做显隐优化，**不做安全判断**。
+3. 不手写 DDL；ORM 与驱动不得泄漏出 `packages/db`。
+4. 未经明确授权不推任何远端；推送前核对分支、工作区、目标提交。
+5. 文档里的数字必须能从命令复现；不确定就写"以实跑为准"，别抄旧数字。
+
+**已知坑（踩过一次，别踩第二次）**
+
+- `apps/api` 两条计时用例（`password.test.ts` 防枚举耗时比、`session-service.test.ts`
+  滑动续期）在机器被占满时偶发红，**独占跑必绿**；跑 `verify:full` 前别开并行任务。
+- 组件测试跑在 happy-dom：没有布局，虚拟滚动/真实光标/IME 都测不到，别把绿当已验收。
+- Prisma schema engine 在 Windows 必须写 `file:C:/...`（两斜杠）；不要在 `%LOCALAPPDATA%\Temp` 建库。
+- libSQL `:memory:` 按连接隔离，**测试必须用文件库**；Windows 上句柄不即时释放，清理交给下一轮 `globalSetup`。
+- `.agents/` 与 `docs/architecture/` 不要跑 Prettier（中文表格会被插空格）。
+- 改文档用行号定位，不要用字符串锚点（锚点在替换文本里也出现时计数会错）。
+
 ## 自主决策边界（2026-11-05 与 HALFICE 约定）
 
 HALFICE 明确：能自己定的不要逐条回问，需要他定的按重要性汇总给他。
@@ -379,3 +435,20 @@ Issue #3 下有 4 个 open PR，其中 #7（花小码）与 #8（CodeBuddy）是
 ### 建议的下一步
 
 按 `docs/deploy.md` 的"同事试用流程"表逐条走一遍，把结果补进交付报告。**不要**把自动化通过说成真实用户流程已验收。
+
+---
+
+## CNB 接入与同步说明
+
+> **当前状态：CNB 已暂停使用（2026-11-06）。** 停用期间只推 `origin`（GitHub），
+> 不推 `cnb`、不在 CNB 上建仓/开工单、不依赖它的流水线；分支只留本地或 GitHub。
+> 本节描述的是恢复使用后的规则，恢复时先按新的授权重新确认，不要照旧自动执行。
+
+- CNB 仓库：`https://cnb.cool/ha1fice/weShare`，与 GitHub 仓库形成双托管；远端名为 `cnb`（CNB）和 `origin`（GitHub）。**GitHub 是唯一源头**，CNB 的 `main` 是镜像。
+- CNB Git 仅支持 HTTPS；地址不加 `.git`，固定用户名 `cnb`，密码为访问令牌。令牌从本机 Git 凭据库或安全环境变量读取。
+- **禁止把访问令牌写入本文、Git remote URL、命令历史、Issue、日志或提交。** 曾在会话中明文出现的令牌视为已暴露，应在 CNB 后台撤销并重建；不要复用旧值。
+- 当前令牌仅有"代码仓库读写"权限；流水线日志读取会因缺少流水线读权限返回 403。未确认权限前不得声称已核验 CNB 构建结果。
+- 推送：日常只推 `origin`；未经明确授权不得推 `cnb`。推送前先核对分支、工作区、目标提交和两端差异。
+- CNB 上写的代码回流路径只有一条：分支 → 推回 GitHub → PR → 在 GitHub 合并，不允许直接改任一端的 `main`。
+- 仓库根目录有 `.cnb.yml`，CI 运行 `pnpm verify:full`；云端首次启动 SQLite 环境前需按开发文档执行迁移和 seed。Seed 凭据仅供本地示例，不应复用于生产。
+- CNB NPC 在 Issue/PR 中以 `@` 触发；启用工作模式后可能写代码、推分支和创建 PR。执行 NPC 前核实其目标分支及未提交/未推送改动，NPC 回复不等于代码已合入或验收通过。

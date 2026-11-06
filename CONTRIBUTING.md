@@ -109,7 +109,7 @@ BREAKING CHANGE: PATCH /api/v1/nodes/:id 在移动时新增目标父级权限校
 
 - **方言不可上浮**：`packages/db` 之外不允许出现 `sqlite`、`jsonb`、`timestamptz` 等标识，CI 扫描，命中即失败。
 - **许可证门禁**：GPL / AGPL 依赖硬失败。
-- **无手写 DDL**：表结构只来自 `drizzle-kit generate` 的迁移。
+- **无手写 DDL**：表结构只来自 `packages/db` 里 Prisma 生成的迁移（`pnpm db:migrate`）。
 
 ## 架构变更流程
 
