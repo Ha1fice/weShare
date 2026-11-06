@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ERROR_CODES } from './index.js'
-import { ERROR_MESSAGES, errorMessage } from './error-messages.js'
+import { ERROR_MESSAGES, NETWORK_ERROR_MESSAGE, errorMessage } from './error-messages.js'
 
 /** S1 验收：每个错误码都有非空中文文案（兜底用，后端 message 优先）。 */
 describe('ERROR_MESSAGES', () => {
@@ -19,11 +19,13 @@ describe('ERROR_MESSAGES', () => {
     }
   })
 
-  it('errorMessage：NETWORK_ERROR 强制兜底，不透传网络层诊断信息', () => {
-    expect(errorMessage({ code: 'NETWORK_ERROR' })).toBe(ERROR_MESSAGES.INTERNAL_ERROR)
+  it('errorMessage：NETWORK_ERROR 用网络文案，不透传诊断信息，也不冒充服务端 5xx', () => {
+    expect(errorMessage({ code: 'NETWORK_ERROR' })).toBe(NETWORK_ERROR_MESSAGE)
     expect(errorMessage({ code: 'NETWORK_ERROR', message: 'Failed to fetch (diagnostic)' })).toBe(
-      ERROR_MESSAGES.INTERNAL_ERROR,
+      NETWORK_ERROR_MESSAGE,
     )
+    // 断网 ≠ 服务器故障：两者文案必须不同，否则用户会往错误方向排查
+    expect(NETWORK_ERROR_MESSAGE).not.toBe(ERROR_MESSAGES.INTERNAL_ERROR)
   })
 
   it('errorMessage：有 message 用 message，空/缺失用兜底', () => {

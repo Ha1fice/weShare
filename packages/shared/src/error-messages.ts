@@ -22,15 +22,26 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
 }
 
 /**
+ * 网络层失败的文案。
+ *
+ * 断网和服务端 5xx 是两回事：把「连不上服务器」说成「服务器开小差了」会把
+ * 用户引向错误的排查方向（以为是自己改坏了，其实是本机网络）。文案与
+ * `apps/web/src/api/client.ts` 抛错时带的一致。
+ */
+export const NETWORK_ERROR_MESSAGE = '无法连接服务器，请检查网络后重试'
+
+/**
  * 取展示文案：非空 message 优先，否则按错误码兜底。
  *
  * code 收 `ErrorCode | 'NETWORK_ERROR'`：前端 ApiError 的 code 就是这个联合
  * （网络层失败没有服务端错误码），收进来调用方就不用 as 硬压类型。
- * NETWORK_ERROR 与 5xx 一样强制走兜底——网络层的 message 是 fetch 诊断信息，
- * 不是用户文案。
+ * NETWORK_ERROR 的 message 是 fetch 诊断信息，不是用户文案，必须换成网络提示。
  */
 export function errorMessage(err: { code: ErrorCode | 'NETWORK_ERROR'; message?: string }): string {
-  if (err.code === 'INTERNAL_ERROR' || err.code === 'NETWORK_ERROR') {
+  if (err.code === 'NETWORK_ERROR') {
+    return NETWORK_ERROR_MESSAGE
+  }
+  if (err.code === 'INTERNAL_ERROR') {
     return ERROR_MESSAGES.INTERNAL_ERROR
   }
   const message = err.message?.trim()
