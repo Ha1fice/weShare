@@ -239,11 +239,23 @@ export class NodeService {
   async listTrash(
     workspaceId: string,
     userId: string,
-  ): Promise<Array<TreeNode & { role: Role }>> {
+  ): Promise<Array<TreeNode & { role: Role; batchSize: number }>> {
     const base = await this.workspaceBase(workspaceId, userId)
 
     const all = await this.repos.nodes.listTrash(workspaceId)
     if (all.length === 0) return []
+
+    // 整批项数：在权限过滤**之前**按批次根聚合，最终只下发数字。
+    //
+    // 前端需要它来判断"这一批我是否整批可见"：只问"批次根在不在可见列表"
+    // 会漏掉"根可见、子项不可见"这一半，这时界面会把批次当成完整的，
+    // 彻底删除按钮可点，purge 级联删掉用户根本看不见的私密内容（评审 #18 F1）。
+    // 计数不携带任何标题/id 之外的信息，过滤逻辑一个字节都不放宽。
+    const batchSizeByRoot = new Map<string, number>()
+    for (const node of all) {
+      const rootId = node.trashRootId ?? node.id
+      batchSizeByRoot.set(rootId, (batchSizeByRoot.get(rootId) ?? 0) + 1)
+    }
 
     const aclRows = await this.repos.acl.listForNodes(
       all.map((n) => n.id),
@@ -252,7 +264,7 @@ export class NodeService {
     )
     const aclByNode = groupAclByNode(aclRows)
 
-    const result: Array<TreeNode & { role: Role }> = []
+    const result: Array<TreeNode & { role: Role; batchSize: number }> = []
     for (const node of all) {
       const ctx: AuthzContext = {
         userId,
@@ -262,7 +274,10 @@ export class NodeService {
       }
       // 回收站内只有 manage 可查看（架构文档 §8.2）
       const role = effectiveRole(ctx, toAuthzNode(node), 'read')
-      if (role !== null) result.push({ ...node, role })
+      if (role !== null) {
+        const batchSize = batchSizeByRoot.get(node.trashRootId ?? node.id) ?? 1
+        result.push({ ...node, role, batchSize })
+      }
     }
 
     return result

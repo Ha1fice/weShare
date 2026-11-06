@@ -496,6 +496,8 @@ describe('删除 / 回收站 / 还原 / 彻底删除', () => {
     // 子节点和根节点的 trashRootId 都指向批次根（被删目录自身）
     for (const n of nodes) {
       expect(n.trashRootId).toBe(folderId)
+      // 契约：回收站每条都带整批项数（权限过滤前聚合），前端据此判"整批可见"
+      expect(n.batchSize).toBe(2)
     }
   })
 

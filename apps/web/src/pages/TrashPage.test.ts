@@ -33,6 +33,8 @@ interface TrashItem {
   deletedAt: string | null
   trashRootId: string | null
   role?: string
+  /** 服务端下发的整批项数（权限过滤前聚合）。 */
+  batchSize?: number
 }
 
 function item(partial: Partial<TrashItem> & { id: string; title: string }): TrashItem {
@@ -48,6 +50,7 @@ function item(partial: Partial<TrashItem> & { id: string; title: string }): Tras
     deletedAt: '2026-01-02T00:00:00.000Z',
     trashRootId: null,
     role: 'manage',
+    batchSize: 1,
     ...partial,
   }
 }
@@ -155,8 +158,8 @@ describe('回收站页面', () => {
   it('按 trashRootId 聚批：目录连同子树显示为一个批次', async () => {
     stubApi(
       trashHandler([
-        item({ id: 'f1', title: '目录', type: 'folder', trashRootId: 'f1' }),
-        item({ id: 'd1', title: '子文档', parentId: 'f1', trashRootId: 'f1' }),
+        item({ id: 'f1', title: '目录', type: 'folder', trashRootId: 'f1', batchSize: 2 }),
+        item({ id: 'd1', title: '子文档', parentId: 'f1', trashRootId: 'f1', batchSize: 2 }),
         item({ id: 'd2', title: '单独文档', trashRootId: 'd2' }),
       ]),
     )
@@ -346,19 +349,22 @@ describe('回收站页面', () => {
   })
 
   it('批次根不可见：整批还原与彻底删除禁用，计数如实标注', async () => {
-    // 批次根 f1 对当前用户无 manage（服务端不返回），只返回可见子项
-    const calls = stubApi(trashHandler([
-      item({ id: 'd1', title: '子文档甲', parentId: 'f1', trashRootId: 'f1' }),
-      item({ id: 'd2', title: '子文档乙', parentId: 'f1', trashRootId: 'f1' }),
-    ]))
+    // 批次根 f1 对当前用户无 manage（服务端不返回），只返回可见子项；
+    // 整批 3 项，我能看到 2 项。
+    const calls = stubApi(
+      trashHandler([
+        item({ id: 'd1', title: '子文档甲', parentId: 'f1', trashRootId: 'f1', batchSize: 3 }),
+        item({ id: 'd2', title: '子文档乙', parentId: 'f1', trashRootId: 'f1', batchSize: 3 }),
+      ]),
+    )
     const wrapper = await mountPage()
     await flushPromises()
 
     const batches = wrapper.findAll('[data-testid="trash-batch"]')
     expect(batches).toHaveLength(1)
-    // 计数不冒充全批：只说可见 2 项
-    expect(batches[0]!.text()).toContain('可见 2 项')
-    expect(batches[0]!.text()).not.toContain('2 项 ·')
+    // 计数不冒充全批：两个数字都摆出来
+    expect(batches[0]!.text()).toContain('该批次共 3 项，你只能看到 2 项')
+    expect(batches[0]!.text()).not.toContain('3 项 ·')
 
     // 两个整批操作按钮都禁用——点了必失败（restore 404 / purge 只删部分）的按钮不能留着
     const restoreBtn = batches[0]!.find('[data-testid="restore-btn"]')
@@ -373,7 +379,37 @@ describe('回收站页面', () => {
 
     // 有明确文案说明原因
     expect(wrapper.find('[data-testid="incomplete-batch-alert"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="incomplete-batch-hint"]').text()).toContain('无权查看')
+    expect(wrapper.find('[data-testid="incomplete-batch-hint"]').text()).toContain('整批还原与彻底删除已禁用')
+  })
+
+  it('批次根可见但子项不可见：仍判为残缺，整批操作禁用', async () => {
+    // M1 的核心场景：根 f1 能看到、子项无权。整批 3 项，我能看到 2 项。
+    // 只问「根在不在可见列表」的做法在这里恒为 false，会把批次当完整，
+    // 彻底删除按钮可点 → purge 级联删掉用户看不见的私密内容。
+    const calls = stubApi(
+      trashHandler([
+        item({ id: 'f1', title: '目录', type: 'folder', trashRootId: 'f1', batchSize: 3 }),
+        item({ id: 'd1', title: '子文档', parentId: 'f1', trashRootId: 'f1', batchSize: 3 }),
+      ]),
+    )
+    const wrapper = await mountPage()
+    await flushPromises()
+
+    const batches = wrapper.findAll('[data-testid="trash-batch"]')
+    expect(batches).toHaveLength(1)
+    expect(batches[0]!.text()).toContain('该批次共 3 项，你只能看到 2 项')
+
+    const restoreBtn = batches[0]!.find('[data-testid="restore-btn"]')
+    expect((restoreBtn.element as HTMLButtonElement).disabled).toBe(true)
+    const purgeBtn = batches[0]!.find('[data-testid="purge-btn"]')
+    expect((purgeBtn.element as HTMLButtonElement).disabled).toBe(true)
+
+    // 入口守卫同样早退：点了也不发请求
+    await restoreBtn.trigger('click')
+    await flushPromises()
+    expect(calls.some((c) => c.method === 'POST')).toBe(false)
+
+    expect(wrapper.find('[data-testid="incomplete-batch-alert"]').exists()).toBe(true)
   })
 
   it('批次根不可见（member）：purge 按钮整体不渲染，还原仍禁用', async () => {
@@ -389,7 +425,9 @@ describe('回收站页面', () => {
           })
         }
         if (method === 'GET' && url.endsWith(`/workspaces/${WS_ID}/trash`)) {
-          return json({ nodes: [item({ id: 'd1', title: '子文档', parentId: 'f1', trashRootId: 'f1' })] })
+          return json({
+            nodes: [item({ id: 'd1', title: '子文档', parentId: 'f1', trashRootId: 'f1', batchSize: 2 })],
+          })
         }
         return json({ error: { code: 'INTERNAL_ERROR', message: 'x' } }, 500)
       }),

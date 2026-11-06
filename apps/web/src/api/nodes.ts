@@ -10,6 +10,13 @@ import { api } from './client.js'
 /** 树节点（含 hasChildren）。 */
 export type TreeNodeItem = TreeNodeView & { role: string }
 
+/**
+ * 回收站节点：比树节点多一个 `batchSize`——该批次（同一 trashRootId）在
+ * 服务端的**整批项数**，是权限过滤之前算出来的聚合数字。
+ * 前端用「可见项数 < batchSize」判断这一批是否整批可见；它不带任何标题。
+ */
+export type TrashNodeItem = TreeNodeItem & { batchSize: number }
+
 export interface TreeNodeResponse {
   nodes: TreeNodeItem[]
 }
@@ -27,7 +34,7 @@ export const nodesApi = {
 
   /** 回收站（只含当前用户有 manage 权限的）。 */
   trash: (workspaceId: string) =>
-    api.get<TreeNodeResponse>(`/workspaces/${workspaceId}/trash`),
+    api.get<{ nodes: TrashNodeItem[] }>(`/workspaces/${workspaceId}/trash`),
 
   detail: (nodeId: string) => api.get<{ node: NodeView }>(`/nodes/${nodeId}`),
 

@@ -12,7 +12,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client.js'
-import { nodesApi, type TreeNodeItem } from '@/api/nodes.js'
+import { nodesApi, type TrashNodeItem } from '@/api/nodes.js'
 import { useSessionStore } from '@/stores/session.js'
 import { errorMessage as formatErrorMessage } from '@weshare/shared'
 import AppShell from '@/components/layout/AppShell.vue'
@@ -34,7 +34,7 @@ const router = useRouter()
 
 const workspaceId = computed(() => String(route.params.workspaceId ?? ''))
 
-const nodes = ref<TreeNodeItem[]>([])
+const nodes = ref<TrashNodeItem[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 
@@ -47,7 +47,7 @@ function messageOf(err: unknown): string {
 }
 
 /** 确认弹窗状态：当前待彻底删除的批次根。null 表示弹窗关闭。 */
-const purgeTarget = ref<TreeNodeItem | null>(null)
+const purgeTarget = ref<TrashNodeItem | null>(null)
 const purgeInput = ref('')
 const purging = ref(false)
 const restoringId = ref<string | null>(null)
@@ -58,22 +58,31 @@ const myRole = computed(
 )
 /** 彻底删除仅空间 owner/admin（§8.2 第 5 条）；还原只需 manage，服务端已过滤。 */
 const canPurge = computed(() => myRole.value === 'owner' || myRole.value === 'admin')
-/** 是否存在批次根不可见的批次（用于给出整批操作被禁用的原因）。 */
+/** 是否存在整批不可完整看见的批次（用于给出整批操作被禁用的原因）。 */
 const hasIncompleteBatch = computed(() => batches.value.some((b) => b.incomplete))
 
 interface TrashBatch {
   rootId: string
   title: string
+  /** 这一批里**我能看见**的项数。 */
   count: number
+  /** 这一批的**整批**项数（服务端在权限过滤前聚合，只给数字）。 */
+  batchSize: number
   deletedAt: string
-  root: TreeNodeItem
-  /** 批次根不在可见列表里（子项可见、根无权）——整批还原/彻底删除必须禁用。 */
+  root: TrashNodeItem
+  /**
+   * 整批不可完整看见——可见项数少于整批项数。
+   *
+   * 判据必须是「可见项数 = 整批项数」，不能是「批次根在不在可见列表」：
+   * 根可见但部分子项无权时，后者恒为 false，界面会把批次当完整的，
+   * 彻底删除可点，purge 级联删掉用户看不见的私密内容（评审 #18 F1）。
+   */
   incomplete: boolean
 }
 
 /** 按 trashRootId 分组聚批（兜底：无 trashRootId 的旧数据按自身 id 成批）。 */
 const batches = computed<TrashBatch[]>(() => {
-  const byRoot = new Map<string, TreeNodeItem[]>()
+  const byRoot = new Map<string, TrashNodeItem[]>()
   for (const n of nodes.value) {
     const rootId = n.trashRootId ?? n.id
     const list = byRoot.get(rootId)
@@ -82,21 +91,30 @@ const batches = computed<TrashBatch[]>(() => {
   }
   const result: TrashBatch[] = []
   for (const [rootId, list] of byRoot) {
-    const root: TreeNodeItem | undefined = list.find((n) => n.id === rootId)
+    const root: TrashNodeItem | undefined = list.find((n) => n.id === rootId)
     // 批次根缺席：还原会 404、purge 只能删掉可见子树，整批操作必须禁用。
-    // 标题取最早删除的可见子项快照；计数如实标注「可见 n 项」，不冒充全批。
-    const head: TreeNodeItem =
+    // 但"根在不在"只是整批可见性的一半——根可见、子项不可见同样必须禁用，
+    // 所以统一按「可见项数 < 整批项数」判定。标题取最早删除的可见子项快照。
+    const head: TrashNodeItem =
       root ??
       [...list].sort((a, b) =>
         (a.deletedAt ?? a.updatedAt).localeCompare(b.deletedAt ?? b.updatedAt),
       )[0]!
+    const count = list.length
+    // 同批次所有项的 batchSize 相同；缺字段（旧数据/旧服务端）时按可见项数兜底，
+    // 宁可少禁用一次操作，也不凭空宣称批次残缺。
+    const batchSize = Math.max(
+      count,
+      ...list.map((n) => n.batchSize ?? count),
+    )
     result.push({
       rootId,
       title: head.title || '未命名',
-      count: list.length,
+      count,
+      batchSize,
       deletedAt: head.deletedAt ?? head.updatedAt,
       root: head,
-      incomplete: root === undefined,
+      incomplete: count < batchSize,
     })
   }
   // 按删除时间倒序，最近删的在前
@@ -259,7 +277,9 @@ function backToWorkspace(): void {
               {{ batch.title }}
             </p>
             <p class="mt-0.5 text-[11px] text-faint">
-              <template v-if="batch.incomplete">可见 {{ batch.count }} 项（部分内容无权查看）·</template>
+              <template v-if="batch.incomplete">
+                该批次共 {{ batch.batchSize }} 项，你只能看到 {{ batch.count }} 项 ·
+              </template>
               <template v-else>{{ batch.count }} 项 ·</template>
               删除于 {{ fmtTime(batch.deletedAt) }}
             </p>
@@ -299,7 +319,8 @@ function backToWorkspace(): void {
         class="mt-3"
       >
         <span data-testid="incomplete-batch-hint">
-          该批次的部分内容你无权查看，无法整批还原或彻底删除；已标注的项数只是可见部分，不代表整批。
+          部分批次你只能看到其中一部分内容，整批还原与彻底删除已禁用。每行标注的是「该批次共 N 项，你只能看到 M
+          项」——M 小于 N 时，整批操作会动到你无权查看的内容。
         </span>
       </AppAlert>
     </main>

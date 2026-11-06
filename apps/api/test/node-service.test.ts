@@ -583,6 +583,43 @@ describe('删除与还原', () => {
     const ownerTrash = await svc.listTrash(WS, OWNER)
     expect(ownerTrash).toHaveLength(1)
   })
+
+  it('整批计数在权限过滤前聚合：根可见、子项不可见时 batchSize 仍是整批', async () => {
+    const folderId = await makeFolder('目录')
+    const secretId = await makeDoc('私密文档', folderId)
+    await svc.updateNode(OWNER, secretId, { visibility: 'private' })
+    // admin 只有目录本身的 manage（ACL 不涉及子项）——这就是"根可见、子项不可见"
+    await db.repos.acl.upsert({
+      id: 'acl-trash-folder',
+      nodeId: folderId,
+      subjectType: 'user',
+      subjectId: ADMIN,
+      role: 'manage',
+      createdBy: OWNER,
+    })
+
+    await svc.softDelete(OWNER, folderId)
+
+    // owner 整批可见：两条都返回，batchSize 都是 2
+    const ownerTrash = await svc.listTrash(WS, OWNER)
+    expect(ownerTrash).toHaveLength(2)
+    expect(ownerTrash.every((n) => n.batchSize === 2)).toBe(true)
+
+    // admin 能看到目录，但看不到 owner 的私密子文档——计数仍必须如实是 2，
+    // 否则前端会把这个批次当完整的，彻底删除会级联删掉它看不见的内容。
+    const adminTrash = await svc.listTrash(WS, ADMIN)
+    expect(adminTrash.map((n) => n.id)).toEqual([folderId])
+    expect(adminTrash[0]!.batchSize).toBe(2)
+  })
+
+  it('无 trashRootId 的旧数据按自身成批，batchSize 为 1', async () => {
+    const docId = await makeDoc('旧数据')
+    await svc.softDelete(OWNER, docId)
+
+    const trash = await svc.listTrash(WS, OWNER)
+    expect(trash).toHaveLength(1)
+    expect(trash[0]!.batchSize).toBe(1)
+  })
 })
 
 describe('彻底删除', () => {

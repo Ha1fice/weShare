@@ -96,7 +96,9 @@ export function registerNodeRoutes(app: FastifyInstance, options: NodeRouteOptio
 
     const list = await nodes.listTrash(id, user.id)
 
-    return { nodes: list.map((n) => toNodeView(n, n.role)) }
+    // batchSize 只在回收站下发：整批项数（服务端聚合、权限过滤前计），
+    // 前端据此判断"这一批我是否整批可见"，不携带标题等任何内容。
+    return { nodes: list.map((n) => ({ ...toNodeView(n, n.role), batchSize: n.batchSize })) }
   })
 
   // ------------------------------------------------------------ 创建
