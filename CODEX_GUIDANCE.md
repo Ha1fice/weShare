@@ -20,6 +20,46 @@ HALFICE 明确：能自己定的不要逐条回问，需要他定的按重要性
 
 ---
 
+## 状态（2026-11-06，CNB NPC 额度用尽后本地接管）
+
+**起因**：CNB AI 积分（credits）用尽，工单 #19「评审复核必修项」的编码流水线
+`402 EXCEEDING_LIMIT` 失败，分支零提交——不是任务本身失败。改由本地执行模型
+（CodeBuddy）接手编码这一棒，产品决策仍按本文件的授权边界执行。
+
+**基线**：`npc/1-phase1-trash-acceptance`，起点 `c62ede0`（= 当时远端 HEAD；
+未 rebase、未覆盖任何历史，远端 HEAD 先核对过）。
+
+**本轮提交**
+
+| 提交 | 内容 |
+|---|---|
+| `d5e1ef4` | **M1** 整批判据从「批次根在不在可见列表」改成「可见项数 = 整批项数」。服务端 `listTrash` 在权限过滤**之前**按 `trashRootId` 聚合 `batchSize`，只下发数字；前端 `incomplete = count < batchSize`，文案「该批次共 N 项，你只能看到 M 项」 |
+| `3e94126` | **M2** 阶段报告出口统计按实测改回 14 个出口 / 7 个文件（12 处 ApiError 模式 + 2 处不是）；**N1** `NETWORK_ERROR` 独立文案，断网不再被说成服务端故障 |
+
+**验证（2026-11-06 本地实测）**：`pnpm verify:full` **11 步全绿**。e2e 组因本机
+没有 playwright 浏览器，按 `playwright.config.ts` 的降级路径**显式跳过并打印原因**，
+不计入通过项。单测分项：web 9 文件 81 例（TrashPage 15）、api 12 文件 231 例、
+shared 2 文件 21 例。
+
+**边界（这轮一条都没越）**：没有推 GitHub、没有推 CNB、没有开/合 PR、没有关 Issue；
+没有动删除/还原/purge 的权限与批次语义；没有做浏览器人工验收（仍归 Issue #10）。
+
+**已知环境噪声**：`apps/api` 两条计时类用例（`password.test.ts` 的防枚举耗时比、
+`session-service.test.ts` 的滑动续期）在机器被其他重活占满时会偶发失败，独占跑
+或单独跑均绿。不是本轮改动引入，但 `verify:full` 前要确保没有并行任务。
+
+### Plan（下一步，按顺序）
+
+1. **推分支 → 开 PR**：`npc/1-phase1-trash-acceptance` 推到 CNB（需明确授权后执行），
+   走评审；合入 CNB `main` 后由镜像同步到 GitHub。GitHub 仍是唯一源头。
+2. **人工浏览器验收**（Issue #10，9 组 30 条）：重点 §7 回收站、§9 401 跳转；
+   结论补进 `docs/reports/phase1.md`。自动化通过 ≠ 真实流程已验收。
+3. **Phase 2**：附件上传、搜索、最近访问、版本历史（Schema 与仓储已就位）。
+4. 遗留技术债（顺序不变）：14 处 `err.message` 统一接入 `errorMessage`、
+   树权限过滤 SQL 化（单空间 > 5000 节点触发）、密码 NFKC→NFC。
+
+---
+
 ## 状态（2026-11-05，Phase 1 收尾完成）
 
 > 上一段"合并 PR #8 之后"的记录保留在下方，两段叠起来看：先有 1.0 主线，
