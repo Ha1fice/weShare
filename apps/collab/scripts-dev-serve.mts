@@ -1,8 +1,10 @@
 /**
- * e2e 专用协同服务入口（playwright webServer 用）。
+ * 本地开发 / e2e 共用的协同服务入口。
  *
- * 不用 `pnpm dev`（tsx watch）——watcher 在 CI 容器里会让整条命令静默退出。
- * start() 返回后 server 挂着、进程不退出，正好当长驻服务用。
+ * `src/server.ts` 只导出 buildCollab/start，不会自行启动——测试会 import 它，
+ * 在那里自动监听会污染测试进程。所以 `pnpm dev` 指向本文件；e2e 的 playwright
+ * webServer 也用同一入口，保证本地与 CI 跑的是同一套启动逻辑。
+ * 直接 `tsx watch src/server.ts` 会起一个 watcher 但永远不监听端口，别再这么写。
  */
 import { start } from './src/server.ts'
 
