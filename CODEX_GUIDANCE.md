@@ -3,6 +3,62 @@
 > 由执行模型（CodeBuddy）维护。**这里不是待办审批清单，是决策记录。**
 > 除下列「需要人拍板」四类之外的实现与产品问题，由执行模型直接决定并记录在此。
 
+## 交接区（换模型/换会话从这里开始，收工前必须更新）
+
+> 目标是：**任何模型在任何进度点接手，读完本节就能开工**，不需要翻会话记录。
+> 每次交付/收工前更新这六行，别让它们过期。
+
+| 项 | 当前值（2026-11-06） |
+|---|---|
+| **项目** | weShare —— 企业私有化协同在线文档平台（Vue 3 + Fastify + Prisma 7/SQLite + Yjs/Hocuspocus） |
+| **代码** | `D:\origin\code\weShare`；远端 `origin` = GitHub `Ha1fice/weShare`（**唯一源头**）；`cnb` = cnb.cool（**2026-11-06 起暂停使用**） |
+| **分支** | `main` = 已交付基线；`npc/1-phase1-trash-acceptance` = 本轮未合并工作（M1/M2/N1） |
+| **最后验证** | 2026-11-06 · `pnpm verify:full` · **11 步全绿**（在 `npc/1-phase1-trash-acceptance` 上跑；e2e 组因本机无浏览器按降级路径显式跳过，不计入通过） |
+| **未推送** | 两个分支都只在本地：`main` 有文档提交、`npc/...` 有 3 个代码提交；**GitHub 也没推** |
+| **下一步** | ① 把 `main` 合进 `npc/...` → 推 GitHub → 开 PR；② Issue #10 人工浏览器验收；③ Phase 2（附件/搜索/最近访问/版本历史） |
+
+**开工三步**（照抄即可，30 秒进入状态）：
+
+```bash
+cd D:/origin/code/weShare
+git status && git log --oneline -5          # 现在在哪个分支、有没有未提交的东西
+pnpm install && pnpm verify:full            # 依赖与基线；红了先修再动新代码
+node scripts/verify.mjs --list              # 门禁清单，改哪块就知道该跑哪组
+```
+
+**读文档的顺序**：本节 → 下方「状态（最新）」→ `docs/architecture/` 对应章节 →
+`docs/reports/phase1.md`（交付口径与"验证边界"）→ 代码。
+
+**文档地图（冲突时以左列为准）**
+
+| 想知道什么 | 看哪份 |
+|---|---|
+| 现在做到哪、下一步、有没有没推的东西 | **本节**（唯一权威） |
+| 为什么这么设计、不变式、已否决的方案 | 本文档决策记录 + `docs/architecture/` |
+| 怎么起服务、环境变量、部署 | `docs/dev-setup.md`、`docs/deploy.md` |
+| 哪些验证过、哪些只是"看起来能跑" | `docs/reports/phase1.md` §「验证边界」 |
+| 人工验收清单（9 组 30 条） | `docs/acceptance/phase1.md` |
+| 风险与待复核项 | 架构文档 §15.2 / §15.3 |
+
+**硬规则（违反即返工，不需要讨论）**
+
+1. **不跨阶段实现**；每阶段做完停下来复核。
+2. 权限判定只有两处实现：`apps/api/src/domain/workspace-service.ts`（空间）与
+   `node-service.ts`（节点）。前端只做显隐优化，**不做安全判断**。
+3. 不手写 DDL；ORM 与驱动不得泄漏出 `packages/db`。
+4. 未经明确授权不推任何远端；推送前核对分支、工作区、目标提交。
+5. 文档里的数字必须能从命令复现；不确定就写"以实跑为准"，别抄旧数字。
+
+**已知坑（踩过一次，别踩第二次）**
+
+- `apps/api` 两条计时用例（`password.test.ts` 防枚举耗时比、`session-service.test.ts`
+  滑动续期）在机器被占满时偶发红，**独占跑必绿**；跑 `verify:full` 前别开并行任务。
+- 组件测试跑在 happy-dom：没有布局，虚拟滚动/真实光标/IME 都测不到，别把绿当已验收。
+- Prisma schema engine 在 Windows 必须写 `file:C:/...`（两斜杠）；不要在 `%LOCALAPPDATA%\Temp` 建库。
+- libSQL `:memory:` 按连接隔离，**测试必须用文件库**；Windows 上句柄不即时释放，清理交给下一轮 `globalSetup`。
+- `.agents/` 与 `docs/architecture/` 不要跑 Prettier（中文表格会被插空格）。
+- 改文档用行号定位，不要用字符串锚点（锚点在替换文本里也出现时计数会错）。
+
 ## 自主决策边界（2026-11-05 与 HALFICE 约定）
 
 HALFICE 明确：能自己定的不要逐条回问，需要他定的按重要性汇总给他。
