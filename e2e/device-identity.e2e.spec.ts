@@ -9,8 +9,16 @@
  *   - api 以 DEVICE_IDENTITY=1 启动（playwright.config 的 webServer 负责）
  *   - vite 以 VITE_DEVICE_IDENTITY=true 启动（同上）
  *
- * 受管环境装不上浏览器时，本文件不会被收集执行（playwright.config 里
- * 检测到无浏览器则把 testDir 指到空目录），交付报告里改附手动清单。
+ * 受管环境装不上浏览器时，本文件不会被收集执行（playwright.config 把
+ * testDir 指到空目录；verify.mjs 也会点名跳过），交付报告里改附手动清单。
+ *
+ * 截图口径（e2e/artifacts/ 下的 png 全部由本文件与 welcome-password
+ * spec 在运行时落盘，属于可复现产物，不是手工截图）：
+ *   welcome.png              /welcome 首屏（未交互，不应有校验红）
+ *   welcome-filled.png       填好名字、提交前
+ *   workspace-home.png       进入后的工作区首页
+ *   trash-empty.png          回收站空态（新建→删除→进回收站）
+ *   login-password-mode.png  密码模式登录页（见 welcome-password.e2e.spec.ts）
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -31,7 +39,16 @@ test.describe('免密身份真机链路', () => {
     await expect(inputs).toHaveCount(1)
     await expect(page.locator('input[type="password"]')).toHaveCount(0)
 
+    // 未交互不标红：无 aria-invalid（R2 口径，第一屏不能是报错态）
+    await expect(page.locator('#display-name')).not.toHaveAttribute('aria-invalid', 'true')
+    await expect(page.getByText('先给自己起个名字')).toHaveCount(0)
+    await page.screenshot({ path: 'e2e/artifacts/welcome.png', fullPage: true })
+
     await page.getByPlaceholder('例如：张三').fill('验收员甲')
+    // 填好名字、提交前：同样不标红
+    await expect(page.getByText('先给自己起个名字')).toHaveCount(0)
+    await page.screenshot({ path: 'e2e/artifacts/welcome-filled.png', fullPage: true })
+
     await page.getByRole('button', { name: '进入' }).click()
 
     // 进工作区：标题栏里能看到「验收员甲 的空间」
@@ -114,5 +131,51 @@ test.describe('隐私模式退化路径', () => {
     await page.getByPlaceholder('例如：张三').fill('隐私模式员')
     await page.getByRole('button', { name: '进入' }).click()
     await expect(page).not.toHaveURL(/\/welcome/, { timeout: 15_000 })
+  })
+})
+
+test.describe('回收站空态截图（工单三张截图之一）', () => {
+  // 空态的取得方式：全新 context（新身份、新空间）→ 建一篇文档 → 删掉 → 进回收站。
+  // 全程走 UI 与真实 API，不改任何回收站语义；截图是运行时产物，可复现。
+  test('新建文档 → 删除 → 回收站空态', async ({ browser }) => {
+    const ctx = await browser.newContext()
+    const page = await ctx.newPage()
+
+    await page.goto('/welcome')
+    await page.getByPlaceholder('例如：张三').fill('回收站验收员')
+    await page.getByRole('button', { name: '进入' }).click()
+    await expect(page).not.toHaveURL(/\/welcome/, { timeout: 15_000 })
+
+    // 登录后落在首页（空间列表），先进空间
+    await page.getByRole('button', { name: /回收站验收员 的空间/ }).click()
+    await expect(page.getByRole('button', { name: '新建', exact: true })).toBeVisible({ timeout: 10_000 })
+
+    // 新建一篇文档
+    await page.getByRole('button', { name: '新建', exact: true }).click()
+    await page.locator('#create-title').fill('删除演练文档')
+    await page.getByRole('button', { name: '创建' }).click()
+    // 创建成功会打开文档页：标题框的值就是新标题、协同已连上
+    await expect(page.getByRole('textbox', { name: '文档标题' })).toHaveValue('删除演练文档', { timeout: 10_000 })
+    await page.getByRole('link', { name: '回到首页' }).click()
+    await page.getByRole('button', { name: /回收站验收员 的空间/ }).click()
+    await expect(page.getByRole('row', { name: /删除演练文档/ })).toBeVisible({ timeout: 10_000 })
+
+    // 悬停行 → 删除 → 确认弹窗
+    const row = page.getByRole('row', { name: /删除演练文档/ })
+    await row.hover()
+    await row.getByRole('button', { name: '删除' }).click()
+    await page.getByRole('button', { name: '移入回收站' }).click()
+    await expect(page.getByText('已移入回收站')).toBeVisible({ timeout: 10_000 })
+
+    // 进回收站：应该看到一条待还原批次
+    await page.getByRole('link', { name: '回收站' }).first().click()
+    await expect(page.getByTestId('trash-batch').first()).toBeVisible({ timeout: 10_000 })
+
+    // 还原整批 → 列表清空 → 空态
+    await page.getByRole('button', { name: '还原' }).first().click()
+    await expect(page.getByTestId('trash-empty')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('回收站是空的')).toBeVisible()
+
+    await page.screenshot({ path: 'e2e/artifacts/trash-empty.png', fullPage: true })
   })
 })

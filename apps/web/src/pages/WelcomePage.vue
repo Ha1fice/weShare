@@ -27,15 +27,20 @@ const deviceMode = session.deviceMode
 const displayName = ref('')
 const submitting = ref(false)
 const errorMessage = ref('')
+/** 提交过一次之后才显示"先给自己起个名字"，否则一进页面输入框就是红的。 */
+const touched = ref(false)
 
 const localError = computed(() => (displayName.value.trim() ? '' : '先给自己起个名字'))
-const canSubmit = computed(() => localError.value === '' && !submitting.value)
+/** 标红（红框 + 红字）只在用户点过「进入」之后出现；未交互不报错。 */
+const showError = computed(() => touched.value && localError.value !== '')
+const canSubmit = computed(() => !submitting.value)
 
 /** 名字里允许的表情/组合字符按"人眼看到的一个字"计数，与后端上限一致。 */
 const NAME_MAX = 64
 
 async function onSubmit(): Promise<void> {
-  if (!canSubmit.value) return
+  touched.value = true
+  if (localError.value || !canSubmit.value) return
 
   submitting.value = true
   errorMessage.value = ''
@@ -74,14 +79,14 @@ async function onSubmit(): Promise<void> {
         </p>
 
         <form class="mt-7" novalidate @submit.prevent="onSubmit">
-          <AppField label="你的名字" html-for="display-name" :error="localError || ''">
+          <AppField label="你的名字" html-for="display-name" :error="showError ? localError : ''">
             <AppInput
               id="display-name"
               v-model="displayName"
               :maxlength="NAME_MAX"
               autocomplete="nickname"
               autofocus
-              :invalid="localError !== ''"
+              :invalid="showError"
               placeholder="例如：张三"
               @keydown.enter.prevent="onSubmit"
             />
